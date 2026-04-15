@@ -6,7 +6,9 @@ Download any YouTube video in your chosen quality — fully interactive, no flag
 
 ## Features
 
+- **Single video or full playlist** — paste either URL and it handles both
 - **Quality picker** — lists all available resolutions (1080p, 720p, 480p, 60fps variants, etc.)
+- **Playlist folder** — each playlist downloads into its own named folder, one `.mp4` per video
 - **Auto audio merge** — if the chosen quality is video-only, best audio is merged automatically
 - **MP4 output** — always saves as a clean `.mp4`
 - **Auto-installs yt-dlp** — no manual setup needed beyond Python
@@ -57,12 +59,12 @@ No additional setup needed.
 python youtube_downloader.py
 ```
 
-### Example session
+### Single video
 
 ```
-Enter YouTube URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+Enter YouTube URL (video or playlist): https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
-Fetching available formats...
+Fetching info...
 
 Title: Rick Astley - Never Gonna Give You Up
 Duration: 3m 32s
@@ -81,7 +83,43 @@ Downloading 1080p...
 Done!
 ```
 
-The file is saved in the current working directory as `Video Title [1080p].mp4`.
+The file is saved in the current directory as `Video Title [1080p].mp4`.
+
+### Playlist
+
+```
+Enter YouTube URL (video or playlist): https://www.youtube.com/playlist?list=PLxxxxxxx
+
+Fetching info...
+
+Playlist: My Favourite Songs
+Videos:   12
+
+Fetching formats from first video to pick quality...
+
+Title: Song One
+Duration: 3m 45s
+
+Available qualities:
+  [1] 1080p  .mp4  (video — audio merged automatically)
+  [2] 720p   .mp4  (video+audio)
+  [3] 480p   .mp4  (video+audio)
+
+Select quality [1-3]: 2
+
+Saving to folder: ./My Favourite Songs/
+
+[1/12] Song One
+  ✓ Done
+[2/12] Song Two
+  ✓ Done
+...
+──────────────────────────────────────────────────
+Downloaded: 12/12
+Folder: ./My Favourite Songs/
+```
+
+Each video is saved as a separate `.mp4` inside a folder named after the playlist.
 
 ---
 
@@ -94,7 +132,7 @@ High-quality streams (1080p and above) on YouTube are split into separate video 
 In the directory you run the script from.
 
 **Does it support playlists?**
-No — this tool downloads a single video. For playlists, use [yt-dlp](https://github.com/yt-dlp/yt-dlp) directly.
+Yes — paste a playlist URL and it downloads every video into a named folder. Quality is picked once and applied to all videos.
 
 **Can I download private videos?**
 No — only publicly accessible videos are supported.

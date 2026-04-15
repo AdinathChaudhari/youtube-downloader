@@ -7,7 +7,7 @@ Download any YouTube video in your chosen quality — fully interactive, no flag
 ## Features
 
 - **Single video or full playlist** — paste either URL and it handles both
-- **Quality picker** — lists all available resolutions (1080p, 720p, 480p, 60fps variants, etc.)
+- **Quality picker** — lists all available resolutions (2160p/4K, 1080p, 720p, 480p, 60fps variants, etc.)
 - **Playlist folder** — each playlist downloads into its own named folder, one `.mp4` per video
 - **Auto audio merge** — if the chosen quality is video-only, best audio is merged automatically
 - **MP4 output** — always saves as a clean `.mp4`
@@ -70,12 +70,13 @@ Title: Rick Astley - Never Gonna Give You Up
 Duration: 3m 32s
 
 Available qualities:
-  [1] 1080p  .mp4  (video — audio merged automatically)
-  [2] 720p   .mp4  (video — audio merged automatically)
-  [3] 480p   .mp4  (video+audio)
-  [4] 360p   .mp4  (video+audio)
+  [1] 2160p  .mp4  (video — audio merged automatically)
+  [2] 1080p  .mp4  (video — audio merged automatically)
+  [3] 720p   .mp4  (video — audio merged automatically)
+  [4] 480p   .mp4  (video+audio)
+  [5] 360p   .mp4  (video+audio)
 
-Select quality [1-4]: 1
+Select quality [1-5]: 2
 
 Downloading 1080p...
 
@@ -126,7 +127,7 @@ Each video is saved as a separate `.mp4` inside a folder named after the playlis
 ## FAQ
 
 **Why do I need FFmpeg?**
-High-quality streams (1080p and above) on YouTube are split into separate video and audio tracks. FFmpeg merges them into a single `.mp4`. Without it, only formats with built-in audio (typically 480p and below) will work.
+High-quality streams (1080p, 1440p, 2160p/4K and above) on YouTube are split into separate video and audio tracks. FFmpeg merges them into a single `.mp4`. Without it, only formats with built-in audio (typically 480p and below) will work.
 
 **Where is the file saved?**
 In the directory you run the script from.

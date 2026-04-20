@@ -23,6 +23,17 @@ def is_playlist(info):
     return info.get("_type") == "playlist"
 
 
+def ask_fcp_mode():
+    print("\nOptimize for Final Cut Pro / QuickTime? (H.264 + AAC, guaranteed compatibility)")
+    while True:
+        ans = input("FCP compatible output? [y/n]: ").strip().lower()
+        if ans in ("y", "yes"):
+            return True
+        if ans in ("n", "no"):
+            return False
+        print("  Enter y or n.")
+
+
 def get_info(url, yt_dlp):
     ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist"}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -91,39 +102,59 @@ def pick_format(info):
         print(f"  Enter a number between 1 and {len(options)}.")
 
 
-def build_fmt_spec(chosen):
+def build_fmt_spec(chosen, fcp_mode):
+    if fcp_mode:
+        # H.264 video + AAC audio for QuickTime/Final Cut Pro compatibility
+        h = chosen["height"]
+        fps = chosen.get("fps") or 0
+        fps_filter = f"[fps<={int(fps)}]" if fps > 30 else ""
+        return (
+            f"bestvideo[vcodec^=avc][height={h}]{fps_filter}+bestaudio[acodec=mp4a]"
+            f"/bestvideo[vcodec^=avc][height<={h}]+bestaudio[acodec=mp4a]"
+            f"/bestvideo[vcodec^=avc][height<={h}]+bestaudio"
+        )
     if chosen["has_audio"]:
         return chosen["format_id"]
     return f"{chosen['format_id']}+bestaudio"
 
 
-def download_single(url, chosen, yt_dlp, output_dir=None):
-    fmt_spec = build_fmt_spec(chosen)
+def build_ydl_opts(fmt_spec, outtmpl, fcp_mode, extra=None):
+    opts = {
+        "format": fmt_spec,
+        "merge_output_format": "mp4" if fcp_mode else None,
+        "outtmpl": outtmpl,
+        "noplaylist": True,
+    }
+    if fcp_mode:
+        opts["postprocessor_args"] = ["-c:a", "aac"]
+    else:
+        del opts["merge_output_format"]
+    if extra:
+        opts.update(extra)
+    return opts
+
+
+def download_single(url, chosen, fcp_mode, yt_dlp, output_dir=None):
+    fmt_spec = build_fmt_spec(chosen, fcp_mode)
     outtmpl = "%(title)s [%(height)sp].%(ext)s"
     if output_dir:
         outtmpl = os.path.join(output_dir, outtmpl)
 
-    print(f"\nDownloading {chosen['label']}...\n")
+    mode_label = "FCP-compatible (H.264/AAC)" if fcp_mode else "original format"
+    print(f"\nDownloading {chosen['label']} [{mode_label}]...\n")
 
-    ydl_opts = {
-        "format": fmt_spec,
-        "merge_output_format": "mp4",
-        "outtmpl": outtmpl,
-        "noplaylist": True,
-    }
-
+    ydl_opts = build_ydl_opts(fmt_spec, outtmpl, fcp_mode)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
 
 
 def pick_quality_label(sample_url, yt_dlp):
-    """Fetch formats from the first video and let user pick a quality label."""
     print("\nFetching formats from first video to pick quality...")
     info = get_formats_for_video(sample_url, yt_dlp)
     return pick_format(info)
 
 
-def download_playlist(url, yt_dlp):
+def download_playlist(url, fcp_mode, yt_dlp):
     print("\nFetching playlist info...")
     info = get_info(url, yt_dlp)
 
@@ -136,13 +167,13 @@ def download_playlist(url, yt_dlp):
     print(f"\nPlaylist: {playlist_title}")
     print(f"Videos:   {len(entries)}\n")
 
-    # Get first real video URL for quality selection
     first_url = entries[0].get("url") or entries[0].get("webpage_url")
     chosen = pick_quality_label(first_url, yt_dlp)
 
     folder_name = safe_dirname(playlist_title)
     os.makedirs(folder_name, exist_ok=True)
-    print(f"\nSaving to folder: ./{folder_name}/\n")
+    mode_label = "FCP-compatible (H.264/AAC)" if fcp_mode else "original format"
+    print(f"\nSaving to folder: ./{folder_name}/  [{mode_label}]\n")
 
     failed = []
     for i, entry in enumerate(entries, 1):
@@ -150,15 +181,9 @@ def download_playlist(url, yt_dlp):
         video_title = entry.get("title") or f"video_{i}"
         print(f"[{i}/{len(entries)}] {video_title}")
         try:
-            fmt_spec = build_fmt_spec(chosen)
-            ydl_opts = {
-                "format": fmt_spec,
-                "merge_output_format": "mp4",
-                "outtmpl": os.path.join(folder_name, "%(title)s [%(height)sp].%(ext)s"),
-                "noplaylist": True,
-                "quiet": True,
-                "no_warnings": True,
-            }
+            fmt_spec = build_fmt_spec(chosen, fcp_mode)
+            outtmpl = os.path.join(folder_name, "%(title)s [%(height)sp].%(ext)s")
+            ydl_opts = build_ydl_opts(fmt_spec, outtmpl, fcp_mode, {"quiet": True, "no_warnings": True})
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([video_url])
             print(f"  ✓ Done")
@@ -183,15 +208,17 @@ def main():
         print("No URL provided.")
         sys.exit(1)
 
+    fcp_mode = ask_fcp_mode()
+
     print("\nFetching info...")
     info = get_info(url, yt_dlp)
 
     if is_playlist(info):
-        download_playlist(url, yt_dlp)
+        download_playlist(url, fcp_mode, yt_dlp)
     else:
         info = get_formats_for_video(url, yt_dlp)
         chosen = pick_format(info)
-        download_single(url, chosen, yt_dlp)
+        download_single(url, chosen, fcp_mode, yt_dlp)
         print("\nDone!")
 
 

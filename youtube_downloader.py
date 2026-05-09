@@ -115,9 +115,12 @@ def build_fmt_spec(chosen, fcp_mode):
             f"/bestvideo[vcodec^=avc][height<={h}]+bestaudio"
         )
     # Use height-based selectors so the spec works across all playlist videos,
-    # not just the one whose format_id was sampled.
+    # not just the one whose format_id was sampled. Prefer mp4/m4a to avoid
+    # ending up with .webm or .mkv containers after merging.
     return (
-        f"bestvideo[height={h}]{fps_filter}+bestaudio"
+        f"bestvideo[ext=mp4][height={h}]{fps_filter}+bestaudio[ext=m4a]"
+        f"/bestvideo[ext=mp4][height<={h}]+bestaudio[ext=m4a]"
+        f"/bestvideo[height={h}]{fps_filter}+bestaudio"
         f"/bestvideo[height<={h}]+bestaudio"
         f"/best[height<={h}]"
         f"/best"
@@ -127,15 +130,13 @@ def build_fmt_spec(chosen, fcp_mode):
 def build_ydl_opts(fmt_spec, outtmpl, fcp_mode, extra=None):
     opts = {
         "format": fmt_spec,
-        "merge_output_format": "mp4" if fcp_mode else None,
+        "merge_output_format": "mp4",
         "outtmpl": outtmpl,
         "noplaylist": True,
         "remote_components": ["ejs:github"],
     }
     if fcp_mode:
         opts["postprocessor_args"] = ["-c:a", "aac"]
-    else:
-        del opts["merge_output_format"]
     if extra:
         opts.update(extra)
     return opts

@@ -8,10 +8,11 @@ Download any YouTube video in your chosen quality — fully interactive, no flag
 
 - **Single video or full playlist** — paste either URL and it handles both
 - **Quality picker** — lists all available resolutions (2160p/4K, 1080p, 720p, 480p, 60fps variants, etc.)
-- **FCP / QuickTime compatible mode** — forces H.264 + AAC so files open natively in Final Cut Pro and QuickTime Player
+- **FCP / QuickTime compatible mode** — forces H.264 + AAC + `.mp4` so files open natively in Final Cut Pro and QuickTime Player
 - **Playlist folder** — each playlist downloads into its own named folder, one file per video
 - **Auto audio merge** — if the chosen quality is video-only, best audio is merged automatically
-- **MP4 output** — always saves as a clean `.mp4`
+- **Best quality by default** — downloads YouTube's highest quality streams (AV1/VP9 + Opus); outputs `.webm` or `.mkv` as needed
+- **FCP / QuickTime mode** — re-encodes to H.264 + AAC + `.mp4` for native playback in Final Cut Pro and QuickTime
 - **Auto-installs yt-dlp** — no manual setup needed beyond Python
 - **Zero config** — just run it and follow the prompts
 
@@ -137,13 +138,14 @@ YouTube's highest-quality streams use **VP9** or **AV1** video with **Opus** aud
 
 When you answer **`y`** to the FCP prompt:
 
-| | Original mode | FCP mode |
+| | Normal mode (`n`) | FCP mode (`y`) |
 |---|---|---|
-| Video codec | VP9 / AV1 (YouTube default) | H.264 (AVC) |
-| Audio codec | Opus / WebM | AAC |
-| Container | best available | MP4 |
+| Video codec | AV1 / VP9 (best quality) | H.264 (AVC) |
+| Audio codec | Opus (best quality) | AAC (re-encoded) |
+| Container | `.webm` or `.mkv` | `.mp4` |
+| Use when | VLC, Plex, any modern player | Final Cut Pro, QuickTime, iMovie |
 
-FCP mode selects the best available H.264 stream at your chosen resolution and re-encodes the audio to AAC via FFmpeg. This adds a small processing step but guarantees the file opens without issues in Final Cut Pro, QuickTime Player, and iMovie.
+Normal mode downloads YouTube's highest quality streams without any re-encoding — AV1/VP9 video and Opus audio produce the best result but output `.webm` or `.mkv`. FCP mode trades a small quality step for guaranteed compatibility with Apple's native players.
 
 ---
 

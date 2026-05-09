@@ -156,7 +156,7 @@ High-quality streams (1080p, 1440p, 2160p/4K) on YouTube are split into separate
 In the directory you run the script from.
 
 **Does it support playlists?**
-Yes — paste a playlist URL and it downloads every video into a named folder. Quality and FCP mode are picked once and applied to all videos.
+Yes — paste a playlist URL and it downloads every video into a named folder. Quality and FCP mode are picked once and applied to all videos. If a specific quality isn't available on a particular video, the downloader automatically falls back to the closest available resolution rather than failing.
 
 **Can I download private videos?**
 No — only publicly accessible videos are supported.

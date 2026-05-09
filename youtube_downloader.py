@@ -104,19 +104,24 @@ def pick_format(info):
 
 
 def build_fmt_spec(chosen, fcp_mode):
+    h = chosen["height"]
+    fps = chosen.get("fps") or 0
+    fps_filter = f"[fps<={int(fps)}]" if fps > 30 else ""
+
     if fcp_mode:
-        # H.264 video + AAC audio for QuickTime/Final Cut Pro compatibility
-        h = chosen["height"]
-        fps = chosen.get("fps") or 0
-        fps_filter = f"[fps<={int(fps)}]" if fps > 30 else ""
         return (
             f"bestvideo[vcodec^=avc][height={h}]{fps_filter}+bestaudio[acodec=mp4a]"
             f"/bestvideo[vcodec^=avc][height<={h}]+bestaudio[acodec=mp4a]"
             f"/bestvideo[vcodec^=avc][height<={h}]+bestaudio"
         )
-    if chosen["has_audio"]:
-        return chosen["format_id"]
-    return f"{chosen['format_id']}+bestaudio"
+    # Use height-based selectors so the spec works across all playlist videos,
+    # not just the one whose format_id was sampled.
+    return (
+        f"bestvideo[height={h}]{fps_filter}+bestaudio"
+        f"/bestvideo[height<={h}]+bestaudio"
+        f"/best[height<={h}]"
+        f"/best"
+    )
 
 
 def build_ydl_opts(fmt_spec, outtmpl, fcp_mode, extra=None):

@@ -9,7 +9,7 @@ def ensure_yt_dlp():
         import yt_dlp
     except ImportError:
         print("Installing yt-dlp...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp>=2026.3.17"])
         import yt_dlp
     return yt_dlp
 
@@ -35,14 +35,15 @@ def ask_fcp_mode():
 
 
 def get_info(url, yt_dlp):
-    ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist"}
+    ydl_opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
+                "remote_components": ["ejs:github"]}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     return info
 
 
 def get_formats_for_video(url, yt_dlp):
-    ydl_opts = {"quiet": True, "no_warnings": True}
+    ydl_opts = {"quiet": True, "no_warnings": True, "remote_components": ["ejs:github"]}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     return info
@@ -124,6 +125,7 @@ def build_ydl_opts(fmt_spec, outtmpl, fcp_mode, extra=None):
         "merge_output_format": "mp4" if fcp_mode else None,
         "outtmpl": outtmpl,
         "noplaylist": True,
+        "remote_components": ["ejs:github"],
     }
     if fcp_mode:
         opts["postprocessor_args"] = ["-c:a", "aac"]

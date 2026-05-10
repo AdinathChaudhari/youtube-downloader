@@ -210,23 +210,40 @@ def download_playlist(url, fcp_mode, yt_dlp):
 def main():
     yt_dlp = ensure_yt_dlp()
 
-    url = input("Enter YouTube URL (video or playlist): ").strip()
-    if not url:
-        print("No URL provided.")
-        sys.exit(1)
+    print("Enter YouTube URLs one at a time. Type 'done' when finished.")
+    urls = []
+    while True:
+        line = input(f"URL {len(urls) + 1} (or 'done'): ").strip()
+        if line.lower() in ("done", "d", ""):
+            if not urls:
+                print("No URLs provided.")
+                sys.exit(1)
+            break
+        if line:
+            urls.append(line)
 
+    print(f"\n{len(urls)} URL(s) queued.")
     fcp_mode = ask_fcp_mode()
 
-    print("\nFetching info...")
-    info = get_info(url, yt_dlp)
+    for i, url in enumerate(urls, 1):
+        if len(urls) > 1:
+            print(f"\n{'═' * 50}")
+            print(f"Video {i}/{len(urls)}: {url}")
 
-    if is_playlist(info):
-        download_playlist(url, fcp_mode, yt_dlp)
-    else:
-        info = get_formats_for_video(url, yt_dlp)
-        chosen = pick_format(info)
-        download_single(url, chosen, fcp_mode, yt_dlp)
-        print("\nDone!")
+        print("\nFetching info...")
+        info = get_info(url, yt_dlp)
+
+        if is_playlist(info):
+            download_playlist(url, fcp_mode, yt_dlp)
+        else:
+            info = get_formats_for_video(url, yt_dlp)
+            chosen = pick_format(info)
+            download_single(url, chosen, fcp_mode, yt_dlp)
+            print("\nDone!")
+
+    if len(urls) > 1:
+        print(f"\n{'═' * 50}")
+        print(f"All {len(urls)} downloads complete.")
 
 
 if __name__ == "__main__":

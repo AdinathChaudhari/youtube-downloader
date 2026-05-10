@@ -6,6 +6,7 @@ Download any YouTube video in your chosen quality — fully interactive, no flag
 
 ## Features
 
+- **Multiple URLs** — queue up as many videos or playlists as you want, then download them all at once
 - **Single video or full playlist** — paste either URL and it handles both
 - **Quality picker** — lists all available resolutions (2160p/4K, 1080p, 720p, 480p, 60fps variants, etc.)
 - **FCP / QuickTime compatible mode** — forces H.264 + AAC + `.mp4` so files open natively in Final Cut Pro and QuickTime Player
@@ -61,15 +62,19 @@ No additional setup needed.
 python youtube_downloader.py
 ```
 
-You'll be asked two questions before anything downloads:
+You'll be prompted to enter URLs one at a time, then answer two questions before anything downloads:
 
-1. **URL** — paste a single video or playlist link
+1. **URLs** — paste videos and/or playlist links one per line, type `done` when finished
 2. **FCP compatible output?** — `y` for Final Cut Pro / QuickTime, `n` for original format
 
 ### Single video
 
 ```
-Enter YouTube URL (video or playlist): https://www.youtube.com/watch?v=dQw4w9WgXcQ
+Enter YouTube URLs one at a time. Type 'done' when finished.
+URL 1 (or 'done'): https://www.youtube.com/watch?v=dQw4w9WgXcQ
+URL 2 (or 'done'): done
+
+1 URL(s) queued.
 FCP compatible output? [y/n]: y
 
 Fetching info...
@@ -92,6 +97,33 @@ Done!
 ```
 
 The file is saved in the current directory as `Video Title [1080p].mp4`.
+
+### Multiple videos
+
+```
+Enter YouTube URLs one at a time. Type 'done' when finished.
+URL 1 (or 'done'): https://www.youtube.com/watch?v=dQw4w9WgXcQ
+URL 2 (or 'done'): https://www.youtube.com/watch?v=abc123
+URL 3 (or 'done'): done
+
+2 URL(s) queued.
+FCP compatible output? [y/n]: n
+
+══════════════════════════════════════════════════
+Video 1/2: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+Fetching info...
+...
+══════════════════════════════════════════════════
+Video 2/2: https://www.youtube.com/watch?v=abc123
+
+Fetching info...
+...
+══════════════════════════════════════════════════
+All 2 downloads complete.
+```
+
+Each URL is processed sequentially. You can mix single videos and playlists in the same queue.
 
 ### Playlist
 

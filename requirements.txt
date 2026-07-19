@@ -1,1 +1,4 @@
 yt-dlp>=2026.3.17
+# streamlink is only needed for live streams / sites yt-dlp can't handle.
+# It auto-installs on first use, so it's optional here — uncomment to preinstall:
+# streamlink>=6.0.0

@@ -12,6 +12,12 @@ Downloads from ~any URL by routing each one to the right engine:
 aria2c is optional: if it's on PATH it's used for direct/FTP/torrent downloads
 (faster, resumable, and the only way to do torrents/magnets); if it isn't, a
 pure-stdlib downloader handles HTTP/FTP files and torrents print an install hint.
+
+Usage:  python video_downloader.py
+        (then paste URLs one per line, type 'done', and answer the FCP prompt)
+
+The router + multi-engine design is inspired by ghost-downloader-3
+(https://github.com/xiaoyouchr/ghost-downloader-3).
 """
 import os
 import re

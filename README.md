@@ -6,6 +6,25 @@ out *how* to fetch it: a video site, a live stream, a direct file, an FTP path, 
 It works like a mini [ghost-downloader](https://github.com/xiaoyouchr/ghost-downloader-3): instead
 of one engine, it's a **router** that dispatches each URL to the best tool for it.
 
+## Quick start
+
+```bash
+pip install yt-dlp                 # one-time (auto-installs on first run anyway)
+brew install ffmpeg aria2          # macOS; ffmpeg required, aria2 recommended
+python video_downloader.py         # then follow the prompts
+```
+
+Then:
+
+1. **Paste URLs** — any site, one per line; type `done` when finished.
+2. **`FCP compatible output? [y/n]`** — `y` re-encodes video to H.264/AAC `.mp4` for Final Cut
+   Pro / QuickTime; `n` keeps the original (best quality). Only affects video.
+3. It downloads each URL, auto-picking the right engine (video site, live stream, direct file,
+   FTP, or torrent). Press <kbd>Ctrl-C</kbd> to skip the current item and continue the queue.
+
+Files land in the current directory (playlists get their own subfolder). That's it — everything
+below is detail.
+
 | URL type | Engine used |
 |---|---|
 | Video sites / playlists (YouTube, Vimeo, X, TikTok, Reddit, Twitch VODs, +1,700 more) | **yt-dlp** |

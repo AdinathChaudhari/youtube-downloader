@@ -1,21 +1,61 @@
-# YouTube Downloader
+# anydl — Universal Downloader
 
-Download any YouTube video in your chosen quality — fully interactive, no flags needed.
+Download from **almost any URL** — fully interactive, no flags needed. Paste a link and it figures
+out *how* to fetch it: a video site, a live stream, a direct file, an FTP path, or a torrent.
+
+It works like a mini [ghost-downloader](https://github.com/xiaoyouchr/ghost-downloader-3): instead
+of one engine, it's a **router** that dispatches each URL to the best tool for it.
+
+## Quick start
+
+```bash
+pip install yt-dlp                 # one-time (auto-installs on first run anyway)
+brew install ffmpeg aria2          # macOS; ffmpeg required, aria2 recommended
+python video_downloader.py         # then follow the prompts
+```
+
+Then:
+
+1. **Paste URLs** — any site, one per line; type `done` when finished.
+2. **`FCP compatible output? [y/n]`** — `y` re-encodes video to H.264/AAC `.mp4` for Final Cut
+   Pro / QuickTime; `n` keeps the original (best quality). Only affects video.
+3. It downloads each URL, auto-picking the right engine (video site, live stream, direct file,
+   FTP, or torrent). Press <kbd>Ctrl-C</kbd> to skip the current item and continue the queue.
+
+Files land in the current directory (playlists get their own subfolder). That's it — everything
+below is detail.
+
+| URL type | Engine used |
+|---|---|
+| Video sites / playlists (YouTube, Vimeo, X, TikTok, Reddit, Twitch VODs, +1,700 more) | **yt-dlp** |
+| Pages with embedded video, HLS/DASH manifests (`.m3u8` / `.mpd`) | **yt-dlp** (generic) |
+| Live streams (and yt-dlp failures) | **streamlink** |
+| Direct files over HTTP/S — `.mp4`, `.zip`, `.pdf`, images, installers, *anything* | **aria2c** (multi-connection) or built-in |
+| FTP | **aria2c** or built-in |
+| Torrents / magnet links | **aria2c** (BitTorrent) |
+
+> Formerly "YouTube Downloader" — YouTube still works exactly as before; it's now just one of
+> hundreds of supported sources.
+
+There is no such thing as *literally* any URL (login walls, DRM, and JS-gated players will always
+resist), but this covers the overwhelming majority of "I just want to save this" cases.
 
 ---
 
-## Features
+## How it decides (the router)
 
-- **Multiple URLs** — queue up as many videos or playlists as you want, then download them all at once
-- **Single video or full playlist** — paste either URL and it handles both
-- **Quality picker** — lists all available resolutions (2160p/4K, 1080p, 720p, 480p, 60fps variants, etc.)
-- **FCP / QuickTime compatible mode** — forces H.264 + AAC + `.mp4` so files open natively in Final Cut Pro and QuickTime Player
-- **Playlist folder** — each playlist downloads into its own named folder, one file per video
-- **Auto audio merge** — if the chosen quality is video-only, best audio is merged automatically
-- **Best quality by default** — downloads YouTube's highest quality streams (AV1/VP9 + Opus); outputs `.webm` or `.mkv` as needed
-- **FCP / QuickTime mode** — re-encodes to H.264 + AAC + `.mp4` for native playback in Final Cut Pro and QuickTime
-- **Auto-installs yt-dlp** — no manual setup needed beyond Python
-- **Zero config** — just run it and follow the prompts
+For each URL, in order:
+
+1. **`magnet:` / `.torrent`** → aria2c BitTorrent (`--seed-time=0`, auto-stops).
+2. **`ftp://`** → aria2c, or the built-in stdlib downloader.
+3. **A known video site** (matched against yt-dlp's ~1,800 extractors) → yt-dlp video path.
+4. Otherwise, **one ranged `GET` probe** (never `HEAD` — it 403s on presigned GitHub/S3 links),
+   then classify by sniffing the first bytes → content-disposition → content-type → extension:
+   - **Manifest** (`#EXTM3U`, `.m3u8`, `.mpd`) → yt-dlp.
+   - **File** (binary content-type / known extension) → direct download.
+   - **Page** → yt-dlp video extraction → streamlink → give up cleanly (never saves the HTML).
+
+Each queue item is independent — <kbd>Ctrl-C</kbd> skips the current download and moves to the next.
 
 ---
 
@@ -23,25 +63,27 @@ Download any YouTube video in your chosen quality — fully interactive, no flag
 
 ### System
 - **Python** 3.8+
-- **FFmpeg** (required for merging video + audio streams)
+- **FFmpeg** — merging video+audio, FCP remuxing (`brew install ffmpeg`)
+- **aria2** *(optional but recommended)* — unlocks torrents/magnets, FTP, and fast multi-connection
+  file downloads. Without it, HTTP/FTP files still download via a built-in stdlib downloader, and
+  torrents print an install hint.
 
 ```bash
 # macOS
-brew install ffmpeg
+brew install ffmpeg aria2
 
 # Ubuntu / Debian
-sudo apt install ffmpeg
-
-# Windows — download from https://ffmpeg.org/download.html
+sudo apt install ffmpeg aria2
 ```
 
 ### Python packages
 
 ```bash
-pip install yt-dlp
+pip install yt-dlp        # streamlink installs on demand, only if a live/unsupported URL needs it
 ```
 
-> `yt-dlp` is auto-installed on first run if missing.
+> `yt-dlp` (and `streamlink`, when first required) auto-install on first run if missing. The direct
+> HTTP/FTP downloader uses only the Python standard library — no extra packages.
 
 ---
 
@@ -50,153 +92,104 @@ pip install yt-dlp
 ```bash
 git clone https://github.com/AdinathChaudhari/youtube-downloader.git
 cd youtube-downloader
+python video_downloader.py
 ```
-
-No additional setup needed.
 
 ---
 
 ## Usage
 
 ```bash
-python youtube_downloader.py
+python video_downloader.py
 ```
 
-You'll be prompted to enter URLs one at a time, then answer two questions before anything downloads:
+You'll be prompted for URLs (one per line, `done` to finish), then whether to make video
+FCP/QuickTime-compatible. Then it just goes.
 
-1. **URLs** — paste videos and/or playlist links one per line, type `done` when finished
-2. **FCP compatible output?** — `y` for Final Cut Pro / QuickTime, `n` for original format
-
-### Single video
+### Video site
 
 ```
-Enter YouTube URLs one at a time. Type 'done' when finished.
-URL 1 (or 'done'): https://www.youtube.com/watch?v=dQw4w9WgXcQ
-URL 2 (or 'done'): done
-
-1 URL(s) queued.
-FCP compatible output? [y/n]: y
-
-Fetching info...
-
-Title: Rick Astley - Never Gonna Give You Up
-Duration: 3m 32s
-
+Detected a known video site → yt-dlp
+Title: Some Talk
 Available qualities:
-  [1] 2160p  .mp4  (video — audio merged automatically)
-  [2] 1080p  .mp4  (video — audio merged automatically)
-  [3] 720p   .mp4  (video — audio merged automatically)
-  [4] 480p   .mp4  (video+audio)
-  [5] 360p   .mp4  (video+audio)
-
-Select quality [1-5]: 2
-
+  [1] 1080p  (video — audio merged automatically)
+  [2] 720p   (video+audio)
+  [3] best available  (auto-selects the best video+audio)
+Select quality [1-3]: 1
 Downloading 1080p [FCP-compatible (H.264/AAC)]...
-
 Done!
 ```
 
-The file is saved in the current directory as `Video Title [1080p].mp4`.
-
-### Multiple videos
+### Direct file (any type)
 
 ```
-Enter YouTube URLs one at a time. Type 'done' when finished.
-URL 1 (or 'done'): https://www.youtube.com/watch?v=dQw4w9WgXcQ
-URL 2 (or 'done'): https://www.youtube.com/watch?v=abc123
-URL 3 (or 'done'): done
-
-2 URL(s) queued.
-FCP compatible output? [y/n]: n
-
-══════════════════════════════════════════════════
-Video 1/2: https://www.youtube.com/watch?v=dQw4w9WgXcQ
-
-Fetching info...
+URL 1 (or 'done'): https://github.com/owner/repo/releases/download/v1/app.dmg
 ...
-══════════════════════════════════════════════════
-Video 2/2: https://www.youtube.com/watch?v=abc123
-
-Fetching info...
-...
-══════════════════════════════════════════════════
-All 2 downloads complete.
+Detected direct file: app.dmg
+Downloading app.dmg (84.2 MB)...
+  ✓ Saved: ./app.dmg
 ```
 
-Each URL is processed sequentially. You can mix single videos and playlists in the same queue.
-
-### Playlist
+### Torrent / magnet
 
 ```
-Enter YouTube URL (video or playlist): https://www.youtube.com/playlist?list=PLxxxxxxx
-FCP compatible output? [y/n]: n
-
-Fetching info...
-
-Playlist: My Favourite Songs
-Videos:   12
-
-Fetching formats from first video to pick quality...
-
-Title: Song One
-Duration: 3m 45s
-
-Available qualities:
-  [1] 1080p  .mp4  (video — audio merged automatically)
-  [2] 720p   .mp4  (video+audio)
-  [3] 480p   .mp4  (video+audio)
-
-Select quality [1-3]: 2
-
-Saving to folder: ./My Favourite Songs/  [original format]
-
-[1/12] Song One
+URL 1 (or 'done'): magnet:?xt=urn:btih:...
+Downloading torrent/magnet via aria2c (Ctrl-C to abort)...
   ✓ Done
-[2/12] Song Two
-  ✓ Done
-...
-──────────────────────────────────────────────────
-Downloaded: 12/12
-Folder: ./My Favourite Songs/
 ```
 
-Each video is saved as a separate file inside a folder named after the playlist.
+### Live stream
+
+```
+URL 1 (or 'done'): https://www.twitch.tv/somechannel
+yt-dlp can't grab this directly (live stream); using streamlink...
+  For a live stream, press Ctrl-C to stop recording.
+  ✓ Saved (remuxed to .mp4): somechannel.mp4
+```
+
+Playlists download into their own named folder. You can mix any of the above in one queue.
 
 ---
 
 ## FCP / QuickTime Compatibility
 
-YouTube's highest-quality streams use **VP9** or **AV1** video with **Opus** audio — codecs that QuickTime Player and Final Cut Pro do not natively support. Even though the container is `.mp4`, the video may refuse to open or play back incorrectly.
+Answer **`y`** to force video into H.264 + AAC + `.mp4` for native Final Cut Pro / QuickTime
+playback:
 
-When you answer **`y`** to the FCP prompt:
-
-| | Normal mode (`n`) | FCP mode (`y`) |
+| | Normal (`n`) | FCP (`y`) |
 |---|---|---|
 | Video codec | AV1 / VP9 (best quality) | H.264 (AVC) |
-| Audio codec | Opus (best quality) | AAC (re-encoded) |
-| Container | `.webm` or `.mkv` | `.mp4` |
-| Use when | VLC, Plex, any modern player | Final Cut Pro, QuickTime, iMovie |
+| Audio codec | Opus (best quality) | AAC |
+| Container | site's native | `.mp4` |
 
-Normal mode downloads YouTube's highest quality streams without any re-encoding — AV1/VP9 video and Opus audio produce the best result but output `.webm` or `.mkv`. FCP mode trades a small quality step for guaranteed compatibility with Apple's native players.
+FCP mode also applies to **direct-downloaded video files**: if the file is already H.264/HEVC + AAC
+in a non-`.mp4` container, it's losslessly remuxed to `.mp4`; other codecs are left as-is with a
+note (it never silently transcodes). Torrents / archives / FTP ignore FCP mode.
 
 ---
 
 ## FAQ
 
-**Why do I need FFmpeg?**
-High-quality streams (1080p, 1440p, 2160p/4K) on YouTube are split into separate video and audio tracks. FFmpeg merges them into a single file. Without it, only formats with built-in audio (typically 480p and below) will work.
+**Which URLs work?**
+Anything [yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md), plus
+unknown pages via its generic extractor, plus any direct HTTP/FTP file, plus torrents/magnets
+(with aria2), plus live streams (via streamlink).
 
-**Where is the file saved?**
-In the directory you run the script from.
+**Do I need aria2?**
+Only for torrents/magnets. Everything else works without it — aria2 just makes HTTP/FTP downloads
+faster (multi-connection) and resumable.
 
-**Does it support playlists?**
-Yes — paste a playlist URL and it downloads every video into a named folder. Quality and FCP mode are picked once and applied to all videos. If a specific quality isn't available on a particular video, the downloader automatically falls back to the closest available resolution rather than failing.
+**Why did it save a `.part` file?**
+An interrupted or incomplete download. Direct downloads write to `name.part` and only rename to the
+final name once complete (and aria2 resumes its own partials), so you never get a truncated file
+masquerading as finished.
 
-**Can I download private videos?**
-No — only publicly accessible videos are supported.
+**Can I download private / paywalled content?**
+Only what your machine can already access publicly. This tool adds no authentication. (Browser
+cookie support is a planned enhancement.)
 
-**What if no H.264 stream exists at my chosen resolution?**
-FCP mode falls back to the best available H.264 stream at or below your chosen height. Audio is always re-encoded to AAC regardless.
+**A site didn't work — what now?**
+Update yt-dlp (`pip install -U yt-dlp`); extractors change constantly.
 
 ---
 
@@ -204,10 +197,10 @@ FCP mode falls back to the best available H.264 stream at or below your chosen h
 
 MIT License — see [LICENSE](LICENSE).
 
----
-
 ## Acknowledgements
 
-Built on top of:
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube downloading engine
-- [FFmpeg](https://ffmpeg.org/) — video/audio merging
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — multi-site video engine
+- [aria2](https://aria2.github.io/) — multi-connection HTTP / FTP / BitTorrent engine
+- [streamlink](https://streamlink.github.io/) — live-stream capture
+- [FFmpeg](https://ffmpeg.org/) — merging & remuxing
+- Architecture inspired by [ghost-downloader-3](https://github.com/xiaoyouchr/ghost-downloader-3)

@@ -1,4 +1,9 @@
 yt-dlp>=2026.3.17
-# streamlink is only needed for live streams / sites yt-dlp can't handle.
-# It auto-installs on first use, so it's optional here — uncomment to preinstall:
+# streamlink — only for live streams / sites yt-dlp can't handle. Auto-installs
+# on first use, so it's optional. Uncomment to preinstall:
 # streamlink>=6.0.0
+#
+# Not a pip package, but recommended (install via your OS package manager, e.g.
+# `brew install aria2`): aria2 enables torrents/magnets, FTP, and fast
+# multi-connection HTTP downloads. Without it, HTTP/FTP files download via the
+# Python standard library and torrents are unavailable.

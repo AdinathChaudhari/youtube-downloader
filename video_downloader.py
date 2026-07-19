@@ -1,16 +1,54 @@
 #!/usr/bin/env python3
-"""anydl — a universal, interactive video downloader.
+"""anydl — a universal, interactive downloader.
 
-Downloads video from ~any website. yt-dlp does the heavy lifting (1,700+ sites
-plus a generic extractor that sniffs <video> tags / HLS / DASH manifests on
-sites it doesn't explicitly know). For live streams and the handful of sites
-yt-dlp can't reach, it falls back to streamlink.
+Downloads from ~any URL by routing each one to the right engine:
+
+  * video sites / playlists / embedded media → yt-dlp (1,700+ extractors + generic)
+  * live streams / yt-dlp failures            → streamlink
+  * direct files over HTTP(S) (any file type) → aria2c (multi-connection) or stdlib
+  * FTP                                        → aria2c or stdlib urllib
+  * torrents / magnet links                    → aria2c (BitTorrent)
+
+aria2c is optional: if it's on PATH it's used for direct/FTP/torrent downloads
+(faster, resumable, and the only way to do torrents/magnets); if it isn't, a
+pure-stdlib downloader handles HTTP/FTP files and torrents print an install hint.
 """
 import os
 import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit, unquote
+
+
+BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/125.0.0.0 Safari/537.36"),
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+# Extensions we treat as "a file to download" (vs. a web page to extract from).
+KNOWN_FILE_EXTS = {
+    # video
+    ".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".ts", ".m4v", ".mpg",
+    ".mpeg", ".wmv", ".3gp",
+    # audio
+    ".mp3", ".m4a", ".aac", ".flac", ".wav", ".opus", ".ogg", ".wma",
+    # archives / disk images / installers
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".xz", ".bz2", ".dmg", ".pkg",
+    ".iso", ".deb", ".rpm", ".apk", ".msi", ".exe",
+    # docs / images / data
+    ".pdf", ".epub", ".mobi", ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ".bmp", ".svg", ".tiff", ".srt", ".vtt", ".ass", ".json", ".csv", ".txt",
+    ".xml",
+}
+
+# Container exts worth a lossless remux to .mp4 for Final Cut Pro (if codecs allow).
+FCP_REMUX_EXTS = {".mkv", ".ts", ".flv", ".avi", ".wmv", ".m4v", ".webm"}
 
 
 def ensure_yt_dlp():
@@ -37,9 +75,24 @@ def ensure_streamlink():
         return [sys.executable, "-m", "streamlink"]
 
 
+def find_aria2c():
+    return shutil.which("aria2c")
+
+
 def safe_filename(name):
     """Strip characters not allowed in file/folder names."""
     return re.sub(r'[\\/:*?"<>|]', "", name or "").strip() or "download"
+
+
+def unique_path(path):
+    """Return path, or 'name (1).ext' etc. if it already exists."""
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    i = 1
+    while os.path.exists(f"{base} ({i}){ext}"):
+        i += 1
+    return f"{base} ({i}){ext}"
 
 
 def is_playlist(info):
@@ -47,7 +100,8 @@ def is_playlist(info):
 
 
 def ask_fcp_mode():
-    print("\nOptimize for Final Cut Pro / QuickTime? (H.264 + AAC, guaranteed compatibility)")
+    print("\nOptimize video for Final Cut Pro / QuickTime? (H.264 + AAC, guaranteed compatibility)")
+    print("(Only affects video; direct files / torrents / FTP are downloaded as-is.)")
     while True:
         ans = input("FCP compatible output? [y/n]: ").strip().lower()
         if ans in ("y", "yes"):
@@ -57,14 +111,14 @@ def ask_fcp_mode():
         print("  Enter y or n.")
 
 
-# ── Extraction ──────────────────────────────────────────────────────────────
+# ── yt-dlp extraction ─────────────────────────────────────────────────────────
 # remote_components ejs:github is needed for current YouTube extraction; it is
 # ignored (harmless) by every other extractor, so it's safe to pass globally.
 _BASE_OPTS = {"quiet": True, "no_warnings": True, "remote_components": ["ejs:github"]}
 
 
 def probe(url, yt_dlp):
-    """Lightweight probe — flat for playlists — used to route the URL."""
+    """Lightweight yt-dlp probe — flat for playlists — used to route the URL."""
     opts = dict(_BASE_OPTS, extract_flat="in_playlist")
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
@@ -74,6 +128,27 @@ def get_full_info(url, yt_dlp):
     """Full extraction with the format list for a single video."""
     with yt_dlp.YoutubeDL(dict(_BASE_OPTS)) as ydl:
         return ydl.extract_info(url, download=False)
+
+
+_KNOWN_IES = None
+
+
+def known_extractor(url, yt_dlp):
+    """True if a *specific* (non-generic) yt-dlp extractor claims this URL.
+
+    Lets us route known video sites straight to yt-dlp without an HTTP probe,
+    and avoids misrouting a known URL whose path happens to end in a file ext.
+    """
+    global _KNOWN_IES
+    if _KNOWN_IES is None:
+        from yt_dlp.extractor import gen_extractor_classes
+        _KNOWN_IES = [ie for ie in gen_extractor_classes()
+                      if "generic" not in ie.IE_NAME.lower()
+                      and "commonmistakes" not in ie.IE_NAME.lower()]
+    try:
+        return any(ie.suitable(url) for ie in _KNOWN_IES)
+    except Exception:
+        return False
 
 
 # ── Quality selection (site-agnostic) ─────────────────────────────────────────
@@ -257,7 +332,7 @@ def download_with_streamlink(url, title, fcp_mode, output_dir=None, reason="live
     return True
 
 
-# ── Download drivers ──────────────────────────────────────────────────────────
+# ── yt-dlp download drivers ────────────────────────────────────────────────────
 def download_single(url, chosen, fcp_mode, yt_dlp, output_dir=None):
     fmt_spec = build_fmt_spec(chosen, fcp_mode)
     outtmpl = outtmpl_for(chosen, output_dir)
@@ -313,53 +388,361 @@ def download_playlist(url, info, fcp_mode, yt_dlp):
     print(f"Folder: ./{folder}/")
 
 
-def handle_url(url, fcp_mode, yt_dlp):
-    """Route one URL: playlist → live → normal yt-dlp → streamlink fallback."""
+# ── HTTP(S) probe + classification ─────────────────────────────────────────────
+def _origin(url):
+    s = urlsplit(url)
+    return f"{s.scheme}://{s.netloc}/" if s.scheme and s.netloc else None
+
+
+def probe_url(url):
+    """One ranged GET (browser headers). Returns (final_url, headers, body) or None.
+
+    A ranged GET (never HEAD) is used because HEAD is frequently rejected or
+    unsigned on presigned CDN URLs (GitHub releases, S3/GCS). Retries once with a
+    Referer if the first attempt is refused.
+    """
+    for extra in ({}, {"Referer": _origin(url) or ""}):
+        headers = dict(BROWSER_HEADERS, Range="bytes=0-8191")
+        headers.update({k: v for k, v in extra.items() if v})
+        try:
+            resp = urllib.request.urlopen(
+                urllib.request.Request(url, headers=headers), timeout=30)
+        except urllib.error.HTTPError:
+            continue          # try the Referer variant, then give up
+        except Exception:
+            return None
+        try:
+            body = resp.read(8192)
+            final = resp.geturl()
+            hdrs = resp.headers
+            resp.close()
+            return (final, hdrs, body)
+        except Exception:
+            return None
+    return None
+
+
+def classify(final_url, headers, body):
+    """Decide MANIFEST / FILE / PAGE. Priority: body sniff > disposition > type > ext."""
+    ct = (headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    cd = (headers.get("Content-Disposition") or "").lower()
+    path = urlsplit(final_url).path.lower()
+    b = body.lstrip(b"\xef\xbb\xbf \t\r\n")
+
+    # 1. Body sniff wins (misreported content-types are common).
+    if b.startswith(b"#EXTM3U"):
+        return "MANIFEST"
+    if b"<MPD" in b[:2048]:
+        return "MANIFEST"
+    # 2. Manifest by extension / content-type.
+    if path.endswith((".m3u8", ".m3u", ".mpd")) or ct in {
+            "application/vnd.apple.mpegurl", "application/x-mpegurl",
+            "audio/mpegurl", "audio/x-mpegurl", "application/dash+xml"}:
+        return "MANIFEST"
+    # 3. "Content-Disposition: attachment" → the server wants us to save it.
+    if "attachment" in cd:
+        return "FILE"
+    # 4. Explicit HTML (by type or body) → a web page to extract from.
+    head = b[:256].lower()
+    if ct in {"text/html", "application/xhtml+xml"} or head.startswith(
+            (b"<!doctype", b"<html", b"<head")):
+        return "PAGE"
+    # 5. Binary/media content-types → a file.
+    if ct.startswith(("video/", "audio/", "image/")) or ct in {
+            "application/octet-stream", "application/zip", "application/pdf",
+            "application/x-7z-compressed", "application/gzip",
+            "application/x-tar", "application/x-rar-compressed",
+            "application/x-bittorrent"}:
+        return "FILE"
+    # 6. Known file extension.
+    if os.path.splitext(path)[1] in KNOWN_FILE_EXTS:
+        return "FILE"
+    return "PAGE"
+
+
+def derive_filename(url, headers):
+    cd = headers.get("Content-Disposition") or ""
+    m = (re.search(r"filename\*\s*=\s*(?:UTF-8'')?([^;\r\n]+)", cd, re.I)
+         or re.search(r'filename\s*=\s*"?([^";\r\n]+)"?', cd, re.I))
+    if m:
+        return safe_filename(unquote(m.group(1).strip().strip('"')))
+    name = unquote(os.path.basename(urlsplit(url).path))
+    return safe_filename(name)
+
+
+def _looks_like_html_file(path, limit=65536):
+    """True if a small downloaded file is actually an HTML (error) page."""
+    try:
+        if os.path.getsize(path) > limit:
+            return False
+        with open(path, "rb") as f:
+            head = f.read(256).lstrip().lower()
+        return head.startswith((b"<!doctype", b"<html", b"<head"))
+    except OSError:
+        return False
+
+
+# ── aria2c + stdlib download engines ───────────────────────────────────────────
+_ARIA2_BASE = ["--console-log-level=warn", "--summary-interval=0",
+               "--file-allocation=none", "--max-tries=3", "--retry-wait=2",
+               "--connect-timeout=15", "--timeout=30"]
+
+
+def download_via_aria2(url, output_dir, mode, filename=None, referer=None):
+    aria = find_aria2c()
+    if not aria:
+        return False
+    args = [aria] + list(_ARIA2_BASE) + ["-d", output_dir or "."]
+    if mode == "http":
+        args += ["-c", "--always-resume=false", "-x", "8", "-s", "8",
+                 "--min-split-size=1M", "--auto-file-renaming=false",
+                 "--allow-overwrite=false", "--user-agent", BROWSER_HEADERS["User-Agent"]]
+        if referer:
+            args += ["--referer", referer]
+        if filename:
+            args += ["-o", filename]
+    elif mode == "ftp":
+        args += ["-c", "-x", "4", "-s", "4", "--ftp-pasv=true"]
+        if filename:
+            args += ["-o", filename]
+    elif mode == "torrent":
+        args += ["--seed-time=0", "--bt-stop-timeout=600",
+                 "--follow-torrent=mem", "--bt-save-metadata=false"]
+    args.append(url)
+    return subprocess.call(args) == 0
+
+
+def _download_urllib_to(url, target, referer=None, expect_media=True):
+    """Stream a URL to <target> via .part, then atomic rename. urllib handles ftp://."""
+    headers = dict(BROWSER_HEADERS)
+    if referer:
+        headers["Referer"] = referer
+    try:
+        resp = urllib.request.urlopen(
+            urllib.request.Request(url, headers=headers), timeout=60)
+    except urllib.error.HTTPError as e:
+        print(f"  ✗ HTTP {e.code} {e.reason}")
+        return None
+    except Exception as e:
+        print(f"  ✗ Download failed: {e}")
+        return None
+
+    with resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        encoded = bool(resp.headers.get("Content-Encoding"))
+        first = resp.read(1 << 16)
+        if expect_media and first[:256].lstrip().lower().startswith(
+                (b"<!doctype", b"<html", b"<head")):
+            print("  ✗ Server returned an HTML page, not a file.")
+            return None
+        part = target + ".part"
+        name = os.path.basename(target)
+        print(f"\nDownloading {name}" + (f" ({total / 1e6:.1f} MB)" if total else "") + "...")
+        done = 0
+        with open(part, "wb") as f:
+            f.write(first)
+            done += len(first)
+            while True:
+                chunk = resp.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+                done += len(chunk)
+                if total:
+                    print(f"\r  {done * 100 // total:3d}%  "
+                          f"{done / 1e6:.1f}/{total / 1e6:.1f} MB", end="", flush=True)
+        if total:
+            print()
+
+    if total and not encoded and done != total:
+        print(f"  ✗ Incomplete ({done}/{total} bytes); kept {part}")
+        return None
+    os.replace(part, target)
+    print(f"  ✓ Saved: {target}")
+    return target
+
+
+def download_direct(url, filename, output_dir=None, referer=None, expect_media=True):
+    """Download a direct HTTP(S) file via aria2c (if present) else stdlib. Returns path/None."""
+    outdir = output_dir or "."
+    target = unique_path(os.path.join(outdir, safe_filename(filename)))
+    name = os.path.basename(target)
+    if find_aria2c():
+        if download_via_aria2(url, outdir, "http", filename=name, referer=referer):
+            if os.path.exists(target):
+                if expect_media and _looks_like_html_file(target):
+                    os.remove(target)
+                    print("  ✗ Got an HTML page, not a file.")
+                    return None
+                print(f"  ✓ Saved: {target}")
+                return target
+        print("  aria2c didn't produce the file; falling back to built-in downloader...")
+    return _download_urllib_to(url, target, referer=referer, expect_media=expect_media)
+
+
+def download_ftp(url, output_dir=None):
+    if find_aria2c():
+        name = derive_filename(url, {})
+        if download_via_aria2(url, output_dir, "ftp", filename=name):
+            print("  ✓ Done")
+            return True
+        print("  aria2c FTP failed; trying built-in...")
+    name = derive_filename(url, {})
+    target = unique_path(os.path.join(output_dir or ".", name))
+    return _download_urllib_to(url, target, expect_media=False) is not None
+
+
+def download_torrent(url, output_dir=None):
+    if not find_aria2c():
+        print("\nThis is a torrent/magnet link — it needs aria2 to download:")
+        print("  macOS:  brew install aria2")
+        print("  Linux:  sudo apt install aria2   (or your package manager)")
+        return False
+    print("\nDownloading torrent/magnet via aria2c (Ctrl-C to abort)...\n")
+    ok = download_via_aria2(url, output_dir, "torrent")
+    print("  ✓ Done" if ok else "  ✗ Torrent download failed or timed out.")
+    return ok
+
+
+def maybe_fcp_remux(path):
+    """Losslessly remux a video file to .mp4 for FCP — only if codecs already fit."""
+    if os.path.splitext(path)[1].lower() not in FCP_REMUX_EXTS:
+        return
+    if not (shutil.which("ffprobe") and shutil.which("ffmpeg")):
+        return
+
+    def codec(stream):
+        try:
+            out = subprocess.check_output(
+                ["ffprobe", "-v", "error", "-select_streams", stream,
+                 "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", path],
+                text=True).strip().splitlines()
+            return out[0].strip() if out else ""
+        except Exception:
+            return ""
+
+    vcodec, acodec = codec("v:0"), codec("a:0")
+    if vcodec in ("h264", "hevc") and acodec in ("aac", ""):
+        mp4 = unique_path(os.path.splitext(path)[0] + ".mp4")
+        rc = subprocess.call(["ffmpeg", "-y", "-i", path, "-c", "copy", mp4],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if rc == 0 and os.path.exists(mp4):
+            os.remove(path)
+            print(f"  ✓ Remuxed to FCP-friendly .mp4: {mp4}")
+    else:
+        print(f"  note: codecs {vcodec or '?'}/{acodec or '?'} — left as-is; "
+              "FCP import may need a transcode.")
+
+
+# ── The router ──────────────────────────────────────────────────────────────
+def yt_dlp_flow(url, fcp_mode, yt_dlp, allow_streamlink=True):
+    """Existing video path: playlist → live → single video, with streamlink fallback.
+    Returns True on success, False if yt-dlp couldn't handle it."""
     from yt_dlp.utils import DownloadError
 
     print("\nFetching info...")
     try:
         info = probe(url, yt_dlp)
     except DownloadError as e:
-        # yt-dlp couldn't even identify the URL → last-ditch streamlink attempt.
-        print(f"  yt-dlp extraction failed: {e}")
-        download_with_streamlink(url, url.rstrip("/").split("/")[-1] or "download",
-                                 fcp_mode, reason="yt-dlp extraction failed")
-        return
+        print(f"  yt-dlp couldn't extract media: {str(e)[:200]}")
+        return False
 
     if is_playlist(info):
         download_playlist(url, info, fcp_mode, yt_dlp)
-        return
+        return True
 
-    # Single item — get full formats and check for a live stream.
     try:
         info = get_full_info(url, yt_dlp)
     except DownloadError as e:
-        print(f"  yt-dlp extraction failed: {e}")
-        download_with_streamlink(url, "download", fcp_mode,
-                                 reason="yt-dlp extraction failed")
-        return
+        print(f"  yt-dlp couldn't extract media: {str(e)[:200]}")
+        return False
 
     if info.get("is_live"):
-        download_with_streamlink(url, info.get("title") or "live_stream",
-                                 fcp_mode, reason="live stream")
-        return
+        if allow_streamlink:
+            return download_with_streamlink(url, info.get("title") or "live_stream",
+                                            fcp_mode, reason="live stream")
+        return False
 
     chosen = pick_option(info)
     try:
         download_single(url, chosen, fcp_mode, yt_dlp)
         print("\nDone!")
+        return True
     except DownloadError as e:
-        print(f"  yt-dlp download failed: {e}")
-        download_with_streamlink(url, info.get("title") or "download",
-                                 fcp_mode, reason="yt-dlp download failed")
+        print(f"  yt-dlp download failed: {str(e)[:200]}")
+        if allow_streamlink:
+            return download_with_streamlink(url, info.get("title") or "download",
+                                            fcp_mode, reason="yt-dlp download failed")
+        return False
+
+
+def handle_url(url, fcp_mode, yt_dlp):
+    """Route one URL to the right engine."""
+    scheme = urlsplit(url).scheme.lower()
+
+    # 1. Torrent / magnet.
+    if scheme == "magnet" or urlsplit(url).path.lower().endswith(".torrent") \
+            or (not scheme and url.lower().endswith(".torrent")):
+        download_torrent(url)
+        return
+
+    # 2. FTP and unsupported / unsafe schemes.
+    if scheme == "ftp":
+        download_ftp(url)
+        return
+    if scheme in ("ftps", "sftp"):
+        print(f"\n{scheme}:// isn't supported by aria2/urllib. Skipping.")
+        return
+    if scheme in ("data", "file", "about", "javascript"):
+        print(f"\n{scheme}: URLs aren't downloadable here. Skipping.")
+        return
+    if scheme not in ("http", "https"):
+        print(f"\nUnsupported URL scheme '{scheme}'. Skipping.")
+        return
+
+    # 3a. A specific yt-dlp extractor claims it → straight to the video path.
+    if known_extractor(url, yt_dlp):
+        yt_dlp_flow(url, fcp_mode, yt_dlp)
+        return
+
+    # 3b. Probe once, then classify.
+    probed = probe_url(url)
+    if probed is None:
+        # Couldn't probe → UNKNOWN: yt-dlp, then a guarded direct attempt, then streamlink.
+        if yt_dlp_flow(url, fcp_mode, yt_dlp, allow_streamlink=False):
+            return
+        print("  Trying a direct download...")
+        saved = download_direct(url, derive_filename(url, {}), referer=_origin(url))
+        if saved:
+            if fcp_mode:
+                maybe_fcp_remux(saved)
+            return
+        download_with_streamlink(url, derive_filename(url, {}) or "download",
+                                 fcp_mode, reason="all extractors failed")
+        return
+
+    final_url, headers, body = probed
+    kind = classify(final_url, headers, body)
+
+    if kind == "MANIFEST":
+        yt_dlp_flow(url, fcp_mode, yt_dlp)
+    elif kind == "FILE":
+        filename = derive_filename(final_url, headers)
+        print(f"\nDetected direct file: {filename}")
+        saved = download_direct(final_url, filename, referer=_origin(url))
+        if saved and fcp_mode:
+            maybe_fcp_remux(saved)
+    else:  # PAGE — never direct-download (it would save the HTML page).
+        if not yt_dlp_flow(url, fcp_mode, yt_dlp, allow_streamlink=True):
+            print("  ✗ Couldn't find any downloadable media at this URL.")
 
 
 def main():
     yt_dlp = ensure_yt_dlp()
 
-    print("anydl — universal video downloader")
-    print("Enter video URLs from any site, one per line. Type 'done' when finished.")
+    print("anydl — universal downloader")
+    print("Paste URLs from any site (videos, playlists, live streams, direct files,")
+    print("FTP, torrents/magnets), one per line. Type 'done' when finished.")
     urls = []
     while True:
         line = input(f"URL {len(urls) + 1} (or 'done'): ").strip()
@@ -377,11 +760,16 @@ def main():
         if len(urls) > 1:
             print(f"\n{'═' * 50}")
             print(f"Item {i}/{len(urls)}: {url}")
-        handle_url(url, fcp_mode, yt_dlp)
+        try:
+            handle_url(url, fcp_mode, yt_dlp)
+        except KeyboardInterrupt:
+            # Skip just this item; keep the queue going.
+            print("\n  ⏹  Skipped (Ctrl-C).")
+            continue
 
     if len(urls) > 1:
         print(f"\n{'═' * 50}")
-        print(f"All {len(urls)} downloads complete.")
+        print("All downloads complete.")
 
 
 if __name__ == "__main__":

@@ -1,36 +1,42 @@
-# anydl — Universal Video Downloader
+# anydl — Universal Downloader
 
-Download video from **almost any website** in your chosen quality — fully interactive, no flags needed.
+Download from **almost any URL** — fully interactive, no flags needed. Paste a link and it figures
+out *how* to fetch it: a video site, a live stream, a direct file, an FTP path, or a torrent.
 
-Powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp) (1,700+ supported sites plus a generic
-extractor that finds embedded `<video>` / HLS / DASH streams on sites it doesn't explicitly know),
-with a [streamlink](https://streamlink.github.io/) fallback for **live streams** and the odd site
-yt-dlp can't reach.
+It works like a mini [ghost-downloader](https://github.com/xiaoyouchr/ghost-downloader-3): instead
+of one engine, it's a **router** that dispatches each URL to the best tool for it.
+
+| URL type | Engine used |
+|---|---|
+| Video sites / playlists (YouTube, Vimeo, X, TikTok, Reddit, Twitch VODs, +1,700 more) | **yt-dlp** |
+| Pages with embedded video, HLS/DASH manifests (`.m3u8` / `.mpd`) | **yt-dlp** (generic) |
+| Live streams (and yt-dlp failures) | **streamlink** |
+| Direct files over HTTP/S — `.mp4`, `.zip`, `.pdf`, images, installers, *anything* | **aria2c** (multi-connection) or built-in |
+| FTP | **aria2c** or built-in |
+| Torrents / magnet links | **aria2c** (BitTorrent) |
 
 > Formerly "YouTube Downloader" — YouTube still works exactly as before; it's now just one of
-> hundreds of supported sites.
+> hundreds of supported sources.
+
+There is no such thing as *literally* any URL (login walls, DRM, and JS-gated players will always
+resist), but this covers the overwhelming majority of "I just want to save this" cases.
 
 ---
 
-## Features
+## How it decides (the router)
 
-- **Works on almost any site** — YouTube, Vimeo, Twitter/X, TikTok, Reddit, Twitch VODs, news
-  sites, direct `.mp4`/HLS links, and ~1,700 more via yt-dlp; unknown sites are attempted through
-  yt-dlp's generic extractor
-- **Live-stream capture** — live URLs and yt-dlp-unsupported sites automatically fall back to
-  streamlink (auto-installed on first use)
-- **Multiple URLs** — queue as many videos/playlists as you want, then download them all at once
-- **Single video or full playlist** — paste either and it handles both
-- **Robust quality picker** — groups streams by resolution when the site reports one, lists
-  formats by bitrate when it doesn't, and always offers a "best available" option so no site is a
-  dead end
-- **FCP / QuickTime compatible mode** — forces H.264 + AAC + `.mp4` for native playback in Final
-  Cut Pro / QuickTime (streamlink captures are remuxed to `.mp4` too)
-- **Playlist folder** — each playlist downloads into its own named folder, one file per video
-- **Auto audio merge** — video-only picks are merged with the best audio automatically
-- **Auto-installs its dependencies** — `yt-dlp` (and `streamlink` when first needed) install
-  themselves; no manual setup beyond Python + FFmpeg
-- **Zero config** — just run it and follow the prompts
+For each URL, in order:
+
+1. **`magnet:` / `.torrent`** → aria2c BitTorrent (`--seed-time=0`, auto-stops).
+2. **`ftp://`** → aria2c, or the built-in stdlib downloader.
+3. **A known video site** (matched against yt-dlp's ~1,800 extractors) → yt-dlp video path.
+4. Otherwise, **one ranged `GET` probe** (never `HEAD` — it 403s on presigned GitHub/S3 links),
+   then classify by sniffing the first bytes → content-disposition → content-type → extension:
+   - **Manifest** (`#EXTM3U`, `.m3u8`, `.mpd`) → yt-dlp.
+   - **File** (binary content-type / known extension) → direct download.
+   - **Page** → yt-dlp video extraction → streamlink → give up cleanly (never saves the HTML).
+
+Each queue item is independent — <kbd>Ctrl-C</kbd> skips the current download and moves to the next.
 
 ---
 
@@ -38,25 +44,27 @@ yt-dlp can't reach.
 
 ### System
 - **Python** 3.8+
-- **FFmpeg** (required for merging video + audio streams and for FCP remuxing)
+- **FFmpeg** — merging video+audio, FCP remuxing (`brew install ffmpeg`)
+- **aria2** *(optional but recommended)* — unlocks torrents/magnets, FTP, and fast multi-connection
+  file downloads. Without it, HTTP/FTP files still download via a built-in stdlib downloader, and
+  torrents print an install hint.
 
 ```bash
 # macOS
-brew install ffmpeg
+brew install ffmpeg aria2
 
 # Ubuntu / Debian
-sudo apt install ffmpeg
-
-# Windows — download from https://ffmpeg.org/download.html
+sudo apt install ffmpeg aria2
 ```
 
 ### Python packages
 
 ```bash
-pip install yt-dlp        # streamlink is installed on demand, only if a live/unsupported URL needs it
+pip install yt-dlp        # streamlink installs on demand, only if a live/unsupported URL needs it
 ```
 
-> `yt-dlp` (and `streamlink`, when first required) are auto-installed on first run if missing.
+> `yt-dlp` (and `streamlink`, when first required) auto-install on first run if missing. The direct
+> HTTP/FTP downloader uses only the Python standard library — no extra packages.
 
 ---
 
@@ -65,9 +73,8 @@ pip install yt-dlp        # streamlink is installed on demand, only if a live/un
 ```bash
 git clone https://github.com/AdinathChaudhari/youtube-downloader.git
 cd youtube-downloader
+python video_downloader.py
 ```
-
-No additional setup needed.
 
 ---
 
@@ -77,126 +84,93 @@ No additional setup needed.
 python video_downloader.py
 ```
 
-You'll be prompted to enter URLs one at a time, then answer one question before anything downloads:
+You'll be prompted for URLs (one per line, `done` to finish), then whether to make video
+FCP/QuickTime-compatible. Then it just goes.
 
-1. **URLs** — paste video and/or playlist links from any site, one per line; type `done` when finished
-2. **FCP compatible output?** — `y` for Final Cut Pro / QuickTime, `n` for original format
-
-### Single video (any site)
+### Video site
 
 ```
-anydl — universal video downloader
-Enter video URLs from any site, one per line. Type 'done' when finished.
-URL 1 (or 'done'): https://vimeo.com/76979871
-URL 2 (or 'done'): done
-
-1 URL(s) queued.
-FCP compatible output? [y/n]: y
-
-Fetching info...
-
-Title: The Mountain
-Duration: 3m 25s
-
+Detected a known video site → yt-dlp
+Title: Some Talk
 Available qualities:
   [1] 1080p  (video — audio merged automatically)
   [2] 720p   (video+audio)
-  [3] 540p   (video+audio)
-  [4] best available  (auto-selects the best video+audio)
-
-Select quality [1-4]: 1
-
+  [3] best available  (auto-selects the best video+audio)
+Select quality [1-3]: 1
 Downloading 1080p [FCP-compatible (H.264/AAC)]...
-
 Done!
 ```
 
-The file is saved in the current directory. Sites that report a resolution get a
-`Title [1080p].ext` filename; others are saved as `Title.ext`.
+### Direct file (any type)
 
-### Live stream / unsupported site
+```
+URL 1 (or 'done'): https://github.com/owner/repo/releases/download/v1/app.dmg
+...
+Detected direct file: app.dmg
+Downloading app.dmg (84.2 MB)...
+  ✓ Saved: ./app.dmg
+```
+
+### Torrent / magnet
+
+```
+URL 1 (or 'done'): magnet:?xt=urn:btih:...
+Downloading torrent/magnet via aria2c (Ctrl-C to abort)...
+  ✓ Done
+```
+
+### Live stream
 
 ```
 URL 1 (or 'done'): https://www.twitch.tv/somechannel
-...
-Fetching info...
-
 yt-dlp can't grab this directly (live stream); using streamlink...
   For a live stream, press Ctrl-C to stop recording.
-
   ✓ Saved (remuxed to .mp4): somechannel.mp4
 ```
 
-### Playlist
-
-```
-Playlist: My Favourite Songs
-Videos:   12
-
-Fetching formats from the first item to pick quality...
-...
-Saving to folder: ./My Favourite Songs/  [original format]
-
-[1/12] Song One
-  ✓ Done
-...
-──────────────────────────────────────────────────
-Downloaded: 12/12
-Folder: ./My Favourite Songs/
-```
-
-Each video is saved as a separate file inside a folder named after the playlist. You can mix
-single videos and playlists from different sites in the same queue.
-
----
-
-## How it decides what to use
-
-For each URL, in order:
-
-1. **Playlist?** → downloads every entry into a named folder (quality picked once, applied to all).
-2. **Live stream?** (`is_live`) → captured with **streamlink** (`best` quality).
-3. **Normal video** → downloaded with **yt-dlp** at your chosen quality.
-4. **yt-dlp can't extract or download it?** → last-ditch **streamlink** attempt on the raw URL.
+Playlists download into their own named folder. You can mix any of the above in one queue.
 
 ---
 
 ## FCP / QuickTime Compatibility
 
-Many high-quality streams use **VP9** or **AV1** video with **Opus** audio — codecs that QuickTime
-Player and Final Cut Pro don't natively support. Answer **`y`** to the FCP prompt to force a
-compatible file:
+Answer **`y`** to force video into H.264 + AAC + `.mp4` for native Final Cut Pro / QuickTime
+playback:
 
-| | Normal mode (`n`) | FCP mode (`y`) |
+| | Normal (`n`) | FCP (`y`) |
 |---|---|---|
 | Video codec | AV1 / VP9 (best quality) | H.264 (AVC) |
-| Audio codec | Opus (best quality) | AAC (re-encoded) |
-| Container | site's native (`.webm`/`.mkv`/…) | `.mp4` |
-| streamlink capture | `.ts` | remuxed to `.mp4` |
-| Use when | VLC, Plex, any modern player | Final Cut Pro, QuickTime, iMovie |
+| Audio codec | Opus (best quality) | AAC |
+| Container | site's native | `.mp4` |
+
+FCP mode also applies to **direct-downloaded video files**: if the file is already H.264/HEVC + AAC
+in a non-`.mp4` container, it's losslessly remuxed to `.mp4`; other codecs are left as-is with a
+note (it never silently transcodes). Torrents / archives / FTP ignore FCP mode.
 
 ---
 
 ## FAQ
 
-**Which sites are supported?**
-Anything [yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
-(~1,700 sites), plus unknown sites via yt-dlp's generic extractor, plus live streams and a few
-extra sites via streamlink.
+**Which URLs work?**
+Anything [yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md), plus
+unknown pages via its generic extractor, plus any direct HTTP/FTP file, plus torrents/magnets
+(with aria2), plus live streams (via streamlink).
 
-**Why do I need FFmpeg?**
-High-quality streams are often split into separate video and audio tracks; FFmpeg merges them (and
-handles the FCP re-encode / streamlink remux). Without it, only formats with built-in audio work.
+**Do I need aria2?**
+Only for torrents/magnets. Everything else works without it — aria2 just makes HTTP/FTP downloads
+faster (multi-connection) and resumable.
 
-**Where is the file saved?**
-In the directory you run the script from (playlists get their own subfolder).
+**Why did it save a `.part` file?**
+An interrupted or incomplete download. Direct downloads write to `name.part` and only rename to the
+final name once complete (and aria2 resumes its own partials), so you never get a truncated file
+masquerading as finished.
 
 **Can I download private / paywalled content?**
-Only what your machine can already access publicly. This tool adds no authentication.
+Only what your machine can already access publicly. This tool adds no authentication. (Browser
+cookie support is a planned enhancement.)
 
 **A site didn't work — what now?**
-Make sure `yt-dlp` is up to date (`pip install -U yt-dlp`); extractors change often. Live streams
-require `streamlink`, which installs automatically the first time one is needed.
+Update yt-dlp (`pip install -U yt-dlp`); extractors change constantly.
 
 ---
 
@@ -204,11 +178,10 @@ require `streamlink`, which installs automatically the first time one is needed.
 
 MIT License — see [LICENSE](LICENSE).
 
----
-
 ## Acknowledgements
 
-Built on top of:
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — multi-site downloading engine
-- [streamlink](https://streamlink.github.io/) — live-stream / fallback capture
-- [FFmpeg](https://ffmpeg.org/) — video/audio merging and remuxing
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — multi-site video engine
+- [aria2](https://aria2.github.io/) — multi-connection HTTP / FTP / BitTorrent engine
+- [streamlink](https://streamlink.github.io/) — live-stream capture
+- [FFmpeg](https://ffmpeg.org/) — merging & remuxing
+- Architecture inspired by [ghost-downloader-3](https://github.com/xiaoyouchr/ghost-downloader-3)

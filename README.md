@@ -1,4 +1,15 @@
+<!--
+GitHub metadata (authored here; apply verbatim in repo Settings → About/topics):
+
+About: Download video sites, playlists, live streams, torrents & direct files from one prompt — a fully interactive CLI that routes each URL to yt-dlp (1,700+ sites), streamlink, or aria2c, with FCP-compatible H.264/AAC output and browser-cookie retry for locked sites.
+
+Topics (ranked): universal-downloader, download-manager, video-downloader, youtube-downloader, torrent-downloader, magnet-links, livestream, hls, ftp, yt-dlp, streamlink, aria2, ffmpeg, python, cli, interactive-cli, final-cut-pro, cross-platform
+-->
+
 # anydl — Universal Downloader
+
+**Paste a link. It figures out how.**  
+*A fully interactive CLI that routes any URL to the right download engine — video sites, playlists, live streams, torrents, and direct files.*
 
 Download from **almost any URL** — fully interactive, no flags needed. Paste a link and it figures
 out *how* to fetch it: a video site, a live stream, a direct file, an FTP path, or a torrent.

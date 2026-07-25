@@ -11,6 +11,9 @@ Topics (ranked): universal-downloader, download-manager, video-downloader, youtu
 **Paste a link. It figures out how.**  
 *A fully interactive CLI that routes any URL to the right download engine — videos, playlists, live streams, torrents, and direct files.*
 
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)
+
 Download from **almost any URL** — fully interactive, no flags needed. Paste a link and it figures
 out *how* to fetch it: a video site, a live stream, a direct file, an FTP path, or a torrent.
 

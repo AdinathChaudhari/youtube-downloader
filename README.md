@@ -90,8 +90,8 @@ pip install yt-dlp        # streamlink installs on demand, only if a live/unsupp
 ## Installation
 
 ```bash
-git clone https://github.com/AdinathChaudhari/youtube-downloader.git
-cd youtube-downloader
+git clone https://github.com/AdinathChaudhari/anydl.git
+cd anydl
 python anydl.py
 ```
 

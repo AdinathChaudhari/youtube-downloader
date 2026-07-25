@@ -185,8 +185,11 @@ final name once complete (and aria2 resumes its own partials), so you never get 
 masquerading as finished.
 
 **Can I download private / paywalled content?**
-Only what your machine can already access publicly. This tool adds no authentication. (Browser
-cookie support is a planned enhancement.)
+Yes, if you're logged into the site in a browser. anydl tries each URL *without* cookies first (so
+normal downloads pay no cost). Only when a site returns a sign-in / bot-check ("confirm you're not a
+bot") does it ask **once** which browser you're logged in on — Safari, Chrome, Firefox, Edge, Brave,
+or Opera — then retries with that browser's cookies and reuses the choice for the rest of the session.
+Pick `0` to skip. (macOS may prompt your keychain the first time it reads the cookies.)
 
 **A site didn't work — what now?**
 Update yt-dlp (`pip install -U yt-dlp`); extractors change constantly.

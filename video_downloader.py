@@ -123,16 +123,94 @@ def ask_fcp_mode():
 _BASE_OPTS = {"quiet": True, "no_warnings": True, "remote_components": ["ejs:github"]}
 
 
-def probe(url, yt_dlp):
+# ── Browser-cookie support (paywalled / bot-checked sites like YouTube) ─────────
+# Cookies are used only as a *retry* when a site demands sign-in, so the common
+# case pays no cost and no keychain prompt. When a block does hit, we ask ONCE
+# which browser you're logged in on (auto-detecting by disk path can't tell which
+# browser holds the login) and reuse that choice for the rest of the session.
+BROWSERS = ["safari", "chrome", "firefox", "edge", "brave", "opera"]
+_COOKIE_BROWSER = False  # False = not yet asked, None = declined, str = chosen browser
+
+
+def _needs_cookies(err):
+    """True if a yt-dlp error is a sign-in / bot-check that cookies could fix."""
+    s = str(err).lower()
+    return ("sign in to confirm" in s or "not a bot" in s
+            or "confirm you" in s or "sign in to view" in s)
+
+
+def choose_cookie_browser():
+    """Ask once which browser to read cookies from; cache the answer for the run."""
+    global _COOKIE_BROWSER
+    if _COOKIE_BROWSER is not False:
+        return _COOKIE_BROWSER
+    print("\n  This site wants a sign-in cookie. Which browser are you logged into "
+          "it on?")
+    for i, b in enumerate(BROWSERS, 1):
+        print(f"    {i}. {b.capitalize()}")
+    print("    0. None / skip")
+    while True:
+        ans = input("  Browser [0-6]: ").strip()
+        if ans in ("0", ""):
+            _COOKIE_BROWSER = None
+            return None
+        if ans.isdigit() and 1 <= int(ans) <= len(BROWSERS):
+            _COOKIE_BROWSER = BROWSERS[int(ans) - 1]
+            return _COOKIE_BROWSER
+        print("  Enter a number 0-6.")
+
+
+def cookie_opts():
+    """yt-dlp opts to read cookies from the chosen browser, or {} if declined."""
+    b = choose_cookie_browser()
+    return {"cookiesfrombrowser": (b, None, None, None)} if b else {}
+
+
+def _extract(fn, seed=None):
+    """Run an extraction fn(extra_opts), retrying once with browser cookies on a
+    sign-in / bot-check. Returns (info, cookie_extra_that_worked) or None on failure.
+
+    `seed` reuses cookies already known to work for this URL so we don't re-detect
+    (or re-prompt the keychain) on every subsequent extraction of the same video.
+    """
+    from yt_dlp.utils import DownloadError
+    base = dict(seed or {})
+    try:
+        return fn(base), base
+    except DownloadError as e:
+        # Not a cookie issue, or we already retried with cookies → give up.
+        if not _needs_cookies(e) or base:
+            print(f"  yt-dlp couldn't extract media: {str(e)[:200]}")
+            return None
+        ck = cookie_opts()
+        if not ck:
+            print(f"  yt-dlp couldn't extract media: {str(e)[:200]}")
+            print("  Skipped cookies — this URL needs a sign-in to download.")
+            return None
+        print(f"  Retrying with {_COOKIE_BROWSER} cookies "
+              "(your keychain may prompt)...")
+        try:
+            return fn(ck), ck
+        except DownloadError as e2:
+            print(f"  yt-dlp still couldn't extract media: {str(e2)[:200]}")
+            return None
+
+
+def probe(url, yt_dlp, extra=None):
     """Lightweight yt-dlp probe — flat for playlists — used to route the URL."""
     opts = dict(_BASE_OPTS, extract_flat="in_playlist")
+    if extra:
+        opts.update(extra)
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
 
 
-def get_full_info(url, yt_dlp):
+def get_full_info(url, yt_dlp, extra=None):
     """Full extraction with the format list for a single video."""
-    with yt_dlp.YoutubeDL(dict(_BASE_OPTS)) as ydl:
+    opts = dict(_BASE_OPTS)
+    if extra:
+        opts.update(extra)
+    with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
 
 
@@ -339,17 +417,17 @@ def download_with_streamlink(url, title, fcp_mode, output_dir=None, reason="live
 
 
 # ── yt-dlp download drivers ────────────────────────────────────────────────────
-def download_single(url, chosen, fcp_mode, yt_dlp, output_dir=None):
+def download_single(url, chosen, fcp_mode, yt_dlp, output_dir=None, extra=None):
     fmt_spec = build_fmt_spec(chosen, fcp_mode)
     outtmpl = outtmpl_for(chosen, output_dir)
     mode_label = "FCP-compatible (H.264/AAC)" if fcp_mode else "original format"
     print(f"\nDownloading {chosen['label']} [{mode_label}]...\n")
-    ydl_opts = build_ydl_opts(fmt_spec, outtmpl, fcp_mode)
+    ydl_opts = build_ydl_opts(fmt_spec, outtmpl, fcp_mode, extra)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
 
 
-def download_playlist(url, info, fcp_mode, yt_dlp):
+def download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra=None):
     playlist_title = info.get("title") or "playlist"
     entries = [e for e in (info.get("entries") or []) if e]
     if not entries:
@@ -361,7 +439,7 @@ def download_playlist(url, info, fcp_mode, yt_dlp):
 
     first_url = entries[0].get("url") or entries[0].get("webpage_url")
     print("Fetching formats from the first item to pick quality...")
-    chosen = pick_option(get_full_info(first_url, yt_dlp))
+    chosen = pick_option(get_full_info(first_url, yt_dlp, cookie_extra))
 
     folder = safe_filename(playlist_title)
     os.makedirs(folder, exist_ok=True)
@@ -377,7 +455,8 @@ def download_playlist(url, info, fcp_mode, yt_dlp):
             fmt_spec = build_fmt_spec(chosen, fcp_mode)
             outtmpl = outtmpl_for(chosen, folder)
             ydl_opts = build_ydl_opts(fmt_spec, outtmpl, fcp_mode,
-                                      {"quiet": True, "no_warnings": True})
+                                      dict(cookie_extra or {},
+                                           quiet=True, no_warnings=True))
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([video_url])
             print("  ✓ Done")
@@ -647,21 +726,20 @@ def yt_dlp_flow(url, fcp_mode, yt_dlp, allow_streamlink=True):
     from yt_dlp.utils import DownloadError
 
     print("\nFetching info...")
-    try:
-        info = probe(url, yt_dlp)
-    except DownloadError as e:
-        print(f"  yt-dlp couldn't extract media: {str(e)[:200]}")
+    probed = _extract(lambda extra: probe(url, yt_dlp, extra))
+    if probed is None:
         return False
+    info, cookie_extra = probed
 
     if is_playlist(info):
-        download_playlist(url, info, fcp_mode, yt_dlp)
+        download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra)
         return True
 
-    try:
-        info = get_full_info(url, yt_dlp)
-    except DownloadError as e:
-        print(f"  yt-dlp couldn't extract media: {str(e)[:200]}")
+    # Reuse any cookies that already worked so we don't re-detect / re-prompt.
+    full = _extract(lambda extra: get_full_info(url, yt_dlp, extra), seed=cookie_extra)
+    if full is None:
         return False
+    info, cookie_extra = full
 
     if info.get("is_live"):
         if allow_streamlink:
@@ -671,7 +749,7 @@ def yt_dlp_flow(url, fcp_mode, yt_dlp, allow_streamlink=True):
 
     chosen = pick_option(info)
     try:
-        download_single(url, chosen, fcp_mode, yt_dlp)
+        download_single(url, chosen, fcp_mode, yt_dlp, extra=cookie_extra)
         print("\nDone!")
         return True
     except DownloadError as e:

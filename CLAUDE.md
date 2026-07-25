@@ -59,5 +59,11 @@ pick per video (skipped for direct files/torrents). Playlists download into thei
   *remuxes* (never transcodes) and only when ffprobe confirms H.264/HEVC + AAC.
 - `get_full_info`/`probe` pass `remote_components: ["ejs:github"]` to yt-dlp — needed for current
   YouTube extraction, harmless elsewhere.
-- No credentials/config; no persistent state. Browser-cookie support (paywalled/Cloudflare sites)
-  is a planned enhancement.
+- No credentials/config; no persistent state. **Browser-cookie support** kicks in only as a
+  *retry*: when yt-dlp fails with a sign-in / bot-check ("confirm you're not a bot"), `_extract()`
+  asks **once** which browser you're logged in on (`choose_cookie_browser()` → cached in
+  `_COOKIE_BROWSER` for the session), then re-runs with `cookiesfrombrowser=(browser,None,None,None)`.
+  The working cookies are threaded through the rest of that URL's extraction/download so the keychain
+  prompts at most once. Common (non-blocked) downloads pay no cost and get no prompt. We *ask* rather
+  than auto-detect by disk path because only the user knows which browser holds the YouTube login
+  (matches the cookie-browser prompt in the sibling tools streamlist / audiobook-maker-pro / ipod-drop).

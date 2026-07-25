@@ -1,7 +1,7 @@
 <!--
 GitHub metadata (authored here; apply verbatim in repo Settings → About/topics):
 
-About: Download video sites, playlists, live streams, torrents & direct files from one prompt — a fully interactive CLI that routes each URL to yt-dlp (1,700+ sites), streamlink, or aria2c, with FCP-compatible H.264/AAC output and browser-cookie retry for locked sites.
+About: Download video sites, playlists, live streams, torrents & direct files from one prompt — a fully interactive CLI that routes each URL to yt-dlp, streamlink, or aria2c.
 
 Topics (ranked): universal-downloader, download-manager, video-downloader, youtube-downloader, torrent-downloader, magnet-links, livestream, hls, ftp, yt-dlp, streamlink, aria2, ffmpeg, python, cli, interactive-cli, final-cut-pro, cross-platform
 -->

@@ -11,7 +11,7 @@ of one engine, it's a **router** that dispatches each URL to the best tool for i
 ```bash
 pip install yt-dlp                 # one-time (auto-installs on first run anyway)
 brew install ffmpeg aria2          # macOS; ffmpeg required, aria2 recommended
-python video_downloader.py         # then follow the prompts
+python anydl.py         # then follow the prompts
 ```
 
 Then:
@@ -92,7 +92,7 @@ pip install yt-dlp        # streamlink installs on demand, only if a live/unsupp
 ```bash
 git clone https://github.com/AdinathChaudhari/youtube-downloader.git
 cd youtube-downloader
-python video_downloader.py
+python anydl.py
 ```
 
 ---
@@ -100,7 +100,7 @@ python video_downloader.py
 ## Usage
 
 ```bash
-python video_downloader.py
+python anydl.py
 ```
 
 You'll be prompted for URLs (one per line, `done` to finish), then whether to make video

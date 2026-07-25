@@ -6,7 +6,7 @@ the router design is inspired by [ghost-downloader-3](https://github.com/xiaoyou
 
 ## Stack
 
-- Python 3.8+, single-file script (`video_downloader.py`)
+- Python 3.8+, single-file script (`anydl.py`)
 - `yt-dlp` (auto-installs on first run) — video sites + generic extractor
 - `streamlink` (auto-installs on first use) — live streams / yt-dlp fallback
 - `aria2c` (optional, detected via PATH) — multi-connection HTTP, FTP, BitTorrent, magnet
@@ -15,7 +15,7 @@ the router design is inspired by [ghost-downloader-3](https://github.com/xiaoyou
 
 ## Layout & entry points
 
-- `video_downloader.py` — the entire tool. Key pieces:
+- `anydl.py` — the entire tool. Key pieces:
   - `handle_url()` — the router (see order below).
   - `known_extractor()` — matches a URL against yt-dlp's ~1,800 specific extractors.
   - `probe_url()` / `classify()` — one ranged `GET` (never `HEAD`), then classify
@@ -40,7 +40,7 @@ the router design is inspired by [ghost-downloader-3](https://github.com/xiaoyou
 ```bash
 pip install yt-dlp     # or just run it — auto-installs
 brew install ffmpeg aria2   # macOS; ffmpeg required, aria2 recommended (torrents/FTP/fast HTTP)
-python video_downloader.py
+python anydl.py
 ```
 
 Prompts for URLs one per line (`done` to finish), then FCP-compatible output y/n, then a quality

@@ -14,6 +14,10 @@ Topics (ranked): universal-downloader, download-manager, video-downloader, youtu
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)
 
+<p align="center">
+  <img src="docs/media/hero.png" alt="anydl — universal downloader" width="820">
+</p>
+
 Download from **almost any URL** — fully interactive, no flags needed. Paste a link and it figures
 out *how* to fetch it: a video site, a live stream, a direct file, an FTP path, or a torrent.
 

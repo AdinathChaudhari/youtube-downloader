@@ -4,3 +4,6 @@ __pycache__/
 *.webm
 *.mkv
 .DS_Store
+
+# Private About-image prompt (personal speciality — not published)
+docs/media/ABOUT-IMAGE.md

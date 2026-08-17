@@ -236,6 +236,11 @@ def known_extractor(url, yt_dlp):
 
 
 # ── Quality selection (site-agnostic) ─────────────────────────────────────────
+# The never-a-dead-end option: hand format choice back to yt-dlp per video.
+BEST_OPTION = {"label": "best available", "kind": "best", "height": None,
+               "fps": 0, "format_id": None, "has_audio": True}
+
+
 def build_quality_options(info):
     """Return selectable quality options (best first) for any site.
 
@@ -293,8 +298,7 @@ def build_quality_options(info):
     opts = sorted(dedup.values(), key=lambda x: x["tbr"], reverse=True)
 
     # Tier 3 / fallback: always offer "best available" so nothing is a dead end.
-    opts.append({"label": "best available", "kind": "best", "height": None,
-                 "fps": 0, "format_id": None, "has_audio": True})
+    opts.append(dict(BEST_OPTION))
     return opts
 
 
@@ -427,6 +431,33 @@ def download_single(url, chosen, fcp_mode, yt_dlp, output_dir=None, extra=None):
         ydl.download([url])
 
 
+FORMAT_SAMPLE_LIMIT = 5
+
+
+def sample_playlist_formats(entries, yt_dlp, cookie_extra=None):
+    """Full-extract the first *usable* playlist entry, for the quality picker.
+
+    Long playlists routinely open with a dead item (copyright block, deleted,
+    private, region-locked). Sampling only entries[0] let one such item abort the
+    whole run, so walk down the list until one extracts. Returns
+    (info, cookie_extra) or None if the first FORMAT_SAMPLE_LIMIT are all dead.
+    """
+    tried = 0
+    for entry in entries:
+        item_url = entry.get("url") or entry.get("webpage_url")
+        if not item_url:
+            continue
+        got = _extract(lambda extra: get_full_info(item_url, yt_dlp, extra),
+                       seed=cookie_extra)
+        if got is not None:
+            return got
+        tried += 1
+        if tried >= FORMAT_SAMPLE_LIMIT:
+            break
+        print("  That item is unavailable — sampling the next one...")
+    return None
+
+
 def download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra=None):
     playlist_title = info.get("title") or "playlist"
     entries = [e for e in (info.get("entries") or []) if e]
@@ -437,9 +468,15 @@ def download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra=None):
     print(f"\nPlaylist: {playlist_title}")
     print(f"Videos:   {len(entries)}\n")
 
-    first_url = entries[0].get("url") or entries[0].get("webpage_url")
-    print("Fetching formats from the first item to pick quality...")
-    chosen = pick_option(get_full_info(first_url, yt_dlp, cookie_extra))
+    print("Fetching formats from the first available item to pick quality...")
+    sampled = sample_playlist_formats(entries, yt_dlp, cookie_extra)
+    if sampled is None:
+        print(f"\n  Couldn't read formats from the first {FORMAT_SAMPLE_LIMIT} "
+              "items — using 'best available' for the whole playlist.")
+        chosen = dict(BEST_OPTION)
+    else:
+        sample_info, cookie_extra = sampled
+        chosen = pick_option(sample_info)
 
     folder = safe_filename(playlist_title)
     os.makedirs(folder, exist_ok=True)
@@ -461,7 +498,7 @@ def download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra=None):
                 ydl.download([video_url])
             print("  ✓ Done")
         except Exception as e:
-            print(f"  ✗ Failed: {e}")
+            print(f"  ✗ Failed: {str(e)[:200]}")
             failed.append(video_title)
 
     print(f"\n{'─' * 50}")
@@ -849,6 +886,11 @@ def main():
         except KeyboardInterrupt:
             # Skip just this item; keep the queue going.
             print("\n  ⏹  Skipped (Ctrl-C).")
+            continue
+        except Exception as e:
+            # Same rule for an unexpected engine error: one bad URL must not
+            # take the rest of the queue down with it.
+            print(f"\n  ✗ Skipped — unexpected error: {str(e)[:200]}")
             continue
 
     if len(urls) > 1:

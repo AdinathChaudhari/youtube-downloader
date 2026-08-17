@@ -59,6 +59,12 @@ pick per video (skipped for direct files/torrents). Playlists download into thei
   *remuxes* (never transcodes) and only when ffprobe confirms H.264/HEVC + AAC.
 - `get_full_info`/`probe` pass `remote_components: ["ejs:github"]` to yt-dlp — needed for current
   YouTube extraction, harmless elsewhere.
+- **One dead item must never abort a batch.** A playlist's quality pick is sampled from a real
+  video's format list, but long playlists routinely open with a blocked/deleted/private item.
+  `sample_playlist_formats()` walks down to the first entry that extracts (up to
+  `FORMAT_SAMPLE_LIMIT`), then falls back to `BEST_OPTION` ("best available") if they're all dead —
+  the per-video loop already tolerates individual failures. `main()` mirrors this: any unexpected
+  error on one queued URL is caught and skipped, same as `Ctrl-C`.
 - No credentials/config; no persistent state. **Browser-cookie support** kicks in only as a
   *retry*: when yt-dlp fails with a sign-in / bot-check ("confirm you're not a bot"), `_extract()`
   asks **once** which browser you're logged in on (`choose_cookie_browser()` → cached in

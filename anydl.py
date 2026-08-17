@@ -467,7 +467,7 @@ def write_failed_manifest(folder, playlist_title, failed, total):
 
     Dual-purpose on purpose: every comment line starts with '#', so the file reads
     fine to a human *and* `grep -v '^#' failed.txt` yields a bare URL list you can
-    paste straight back into anydl for a retry. On a 239-item run the console tally
+    paste straight back into anydl for a retry. On a long playlist the console tally
     scrolls away; this is the copy that survives.
 
     Never raises — a manifest problem must not fail a run that already downloaded.

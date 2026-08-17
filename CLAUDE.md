@@ -65,6 +65,12 @@ pick per video (skipped for direct files/torrents). Playlists download into thei
   `FORMAT_SAMPLE_LIMIT`), then falls back to `BEST_OPTION` ("best available") if they're all dead —
   the per-video loop already tolerates individual failures. `main()` mirrors this: any unexpected
   error on one queued URL is caught and skipped, same as `Ctrl-C`.
+- **A failed playlist item leaves a paper trail.** `write_failed_manifest()` writes
+  `<playlist>/failed.txt` (index, title, one-line reason, URL) whenever anything failed — the
+  console tally scrolls away on a 200+ item run. Every comment line starts with `#` so the file is
+  both human-readable and machine-usable: `grep -v '^#' failed.txt` is a bare URL list you can
+  paste back into anydl to retry. It never raises; a manifest problem must not fail a run that
+  already downloaded.
 - No credentials/config; no persistent state. **Browser-cookie support** kicks in only as a
   *retry*: when yt-dlp fails with a sign-in / bot-check ("confirm you're not a bot"), `_extract()`
   asks **once** which browser you're logged in on (`choose_cookie_browser()` → cached in

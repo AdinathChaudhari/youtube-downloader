@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit, unquote
@@ -458,6 +459,38 @@ def sample_playlist_formats(entries, yt_dlp, cookie_extra=None):
     return None
 
 
+FAILED_MANIFEST = "failed.txt"
+
+
+def write_failed_manifest(folder, playlist_title, failed, total):
+    """Write ./<folder>/failed.txt listing everything the playlist run couldn't get.
+
+    Dual-purpose on purpose: every comment line starts with '#', so the file reads
+    fine to a human *and* `grep -v '^#' failed.txt` yields a bare URL list you can
+    paste straight back into anydl for a retry. On a 239-item run the console tally
+    scrolls away; this is the copy that survives.
+
+    Never raises — a manifest problem must not fail a run that already downloaded.
+    """
+    path = os.path.join(folder, FAILED_MANIFEST)
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(f"# anydl — failed items from \"{playlist_title}\"\n")
+            fh.write(f"# {len(failed)} of {total} failed · {stamp}\n")
+            fh.write("# '#' lines are comments; the bare lines are URLs.\n")
+            fh.write("# Retry with:  grep -v '^#' failed.txt\n")
+            for idx, title, item_url, reason in failed:
+                fh.write(f"\n# [{idx}/{total}] {title}\n")
+                # Reason is a yt-dlp error — keep it one line so the file stays scannable.
+                fh.write(f"#     {' '.join(str(reason).split())[:300]}\n")
+                fh.write(f"{item_url or '# (no URL in playlist entry)'}\n")
+        return path
+    except OSError as e:
+        print(f"  note: couldn't write {FAILED_MANIFEST}: {e}")
+        return None
+
+
 def download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra=None):
     playlist_title = info.get("title") or "playlist"
     entries = [e for e in (info.get("entries") or []) if e]
@@ -499,14 +532,17 @@ def download_playlist(url, info, fcp_mode, yt_dlp, cookie_extra=None):
             print("  ✓ Done")
         except Exception as e:
             print(f"  ✗ Failed: {str(e)[:200]}")
-            failed.append(video_title)
+            failed.append((i, video_title, video_url, e))
 
     print(f"\n{'─' * 50}")
     print(f"Downloaded: {len(entries) - len(failed)}/{len(entries)}")
     if failed:
         print(f"Failed ({len(failed)}):")
-        for t in failed:
+        for _, t, _, _ in failed:
             print(f"  - {t}")
+        manifest = write_failed_manifest(folder, playlist_title, failed, len(entries))
+        if manifest:
+            print(f"Failed list: ./{manifest}")
     print(f"Folder: ./{folder}/")
 
 

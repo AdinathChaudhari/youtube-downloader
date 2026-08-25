@@ -59,6 +59,18 @@ pick per video (skipped for direct files/torrents). Playlists download into thei
   *remuxes* (never transcodes) and only when ffprobe confirms H.264/HEVC + AAC.
 - `get_full_info`/`probe` pass `remote_components: ["ejs:github"]` to yt-dlp — needed for current
   YouTube extraction, harmless elsewhere.
+- **A stale yt-dlp is the #1 cause of "it just stopped".** Big sites rotate their player every few
+  weeks; an out-of-date copy still lists formats fine, then dies mid-transfer on a bare
+  `HTTP Error 403`. `ensure_yt_dlp()` reads the installed version via `importlib.metadata` (no
+  import), and upgrades when it's older than `YT_DLP_MAX_AGE_DAYS`. The upgrade **must** happen
+  before the first `import yt_dlp` — swapping the package under a running process is a no-op for a
+  re-import, so there's no mid-run rescue. A failed `pip` never aborts the run.
+- **Don't fall back to streamlink on a CDN rejection.** `_looks_stale()` matches the
+  403 / "unable to download video data" / "requested format is not available" signatures; when one
+  of those hits a URL a *specific* extractor claimed, the media was found and the transfer was
+  refused — streamlink has no VOD plugin to offer and just ends in "No plugin can handle URL"
+  after installing 8 MB of deps. Print the upgrade hint instead. Any *other* download error still
+  falls through to streamlink, which is the never-a-dead-end path.
 - **One dead item must never abort a batch.** A playlist's quality pick is sampled from a real
   video's format list, but long playlists routinely open with a blocked/deleted/private item.
   `sample_playlist_formats()` walks down to the first entry that extracts (up to

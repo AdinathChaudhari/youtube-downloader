@@ -19,6 +19,7 @@ Usage:  python anydl.py
 The router + multi-engine design is inspired by ghost-downloader-3
 (https://github.com/xiaoyouchr/ghost-downloader-3).
 """
+import datetime as dt
 import os
 import re
 import shutil
@@ -58,13 +59,65 @@ KNOWN_FILE_EXTS = {
 FCP_REMUX_EXTS = {".mkv", ".ts", ".flv", ".avi", ".wmv", ".m4v", ".webm"}
 
 
+# Big sites rotate their player every few weeks; a yt-dlp older than this starts
+# failing mid-download with a bare HTTP 403 (see _looks_stale below).
+YT_DLP_MAX_AGE_DAYS = 14
+
+
+def _pip_install(*args):
+    """pip install *args into this interpreter. False (not an exception) on failure."""
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *args])
+        return True
+    except (subprocess.CalledProcessError, OSError) as e:
+        print(f"  pip install failed ({str(e)[:120]}) — continuing with what's installed.")
+        return False
+
+
+def _yt_dlp_age_days(ver):
+    """Days since a yt-dlp YYYY.MM.DD version was released, or None if unparseable."""
+    m = re.match(r"^(\d{4})\.(\d{1,2})\.(\d{1,2})", ver or "")
+    if not m:
+        return None
+    try:
+        return (dt.date.today() - dt.date(*(int(g) for g in m.groups()))).days
+    except ValueError:
+        return None
+
+
 def ensure_yt_dlp():
+    """Import yt-dlp, installing it if missing and upgrading it if it's gone stale.
+
+    The upgrade has to happen *before* the first import — a package swapped out
+    underneath a running process isn't picked up by a re-import, so a mid-run
+    upgrade would be a no-op. Read the version via importlib.metadata, which
+    doesn't import the package.
+    """
+    from importlib.metadata import PackageNotFoundError, version as pkg_version
+    try:
+        installed = pkg_version("yt-dlp")
+    except PackageNotFoundError:
+        installed = None
+
+    if installed is None:
+        print("Installing yt-dlp...")
+        _pip_install("yt-dlp>=2026.3.17")
+    else:
+        age = _yt_dlp_age_days(installed)
+        if age is not None and age > YT_DLP_MAX_AGE_DAYS:
+            print(f"yt-dlp {installed} is {age} days old — upgrading first "
+                  "(stale copies 403 mid-download)...")
+            if _pip_install("--upgrade", "yt-dlp"):
+                try:
+                    print(f"  now on yt-dlp {pkg_version('yt-dlp')}")
+                except PackageNotFoundError:
+                    pass
+
     try:
         import yt_dlp
     except ImportError:
-        print("Installing yt-dlp...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp>=2026.3.17"])
-        import yt_dlp
+        sys.exit("yt-dlp isn't installed and couldn't be installed automatically.\n"
+                 f"Install it manually: {sys.executable} -m pip install yt-dlp")
     return yt_dlp
 
 
@@ -138,6 +191,20 @@ def _needs_cookies(err):
     s = str(err).lower()
     return ("sign in to confirm" in s or "not a bot" in s
             or "confirm you" in s or "sign in to view" in s)
+
+
+def _looks_stale(err):
+    """True if a yt-dlp *download* error is the site-broke-the-extractor signature.
+
+    These all mean the URL resolved and the formats listed, then the CDN rejected
+    the actual transfer — a stale player/signature, not a stream yt-dlp can't see.
+    streamlink has nothing to add here, so we say what's wrong instead.
+    """
+    s = str(err).lower()
+    return ("403" in s or "forbidden" in s
+            or "unable to download video data" in s
+            or "requested format is not available" in s
+            or "nsig" in s or "signature" in s)
 
 
 def choose_cookie_browser():
@@ -827,6 +894,14 @@ def yt_dlp_flow(url, fcp_mode, yt_dlp, allow_streamlink=True):
         return True
     except DownloadError as e:
         print(f"  yt-dlp download failed: {str(e)[:200]}")
+        # A CDN rejection on a site yt-dlp has a real extractor for is a stale-yt-dlp
+        # problem. streamlink has no VOD plugin to offer — installing it here just
+        # burns a minute and ends in "No plugin can handle URL".
+        if _looks_stale(e) and known_extractor(url, yt_dlp):
+            print("  This is the site rejecting the transfer, not a stream yt-dlp "
+                  "can't see — streamlink won't help.")
+            print(f"  Upgrade yt-dlp and retry: {sys.executable} -m pip install -U yt-dlp")
+            return False
         if allow_streamlink:
             return download_with_streamlink(url, info.get("title") or "download",
                                             fcp_mode, reason="yt-dlp download failed")
